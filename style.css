@@ -1,0 +1,61 @@
+@font-face {
+	font-family: "87";
+	src: url("font.woff");
+}
+
+a:link {
+	color:LightBlue;
+}
+
+a:visited {
+	color:CadetBlue;
+}
+
+a:hover {
+	color:SkyBlue;
+}
+
+a:active {
+	color:SlateGray;
+}
+big {
+	font-size: 24px;
+}
+body {
+	font-family: "87";
+	color: white;
+	text-shadow: 0.3em 0 4px black, -0.3em 0 4px black;
+	font-size: 18px;
+	background: black;
+	background-image: url('back.jpg');
+	background-attachment: fixed;
+	background-position: center;
+	background-size: cover;
+	text-align: center;
+	padding: 1em;
+}
+img {
+	max-width: 100%;
+	max-height: 100%;
+	margin: 0.5em;
+}
+small {
+	font-size: 12px;
+}
+.styleLogo {
+	top: 0;
+	left: 0;
+	right: 0;
+	display: block;
+	margin-left: auto;
+	margin-right: auto;
+	max-width: 90%;
+	margin-top: 7%;
+	transition: transform 4s ease, opacity 1s ease;
+}
+.styleIcon {
+	position: absolute;
+	max-width: 30%;
+	z-index: -1;
+	transition: transform 5s ease-out, opacity 2s ease, filter 2s ease;
+}

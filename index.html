@@ -1,0 +1,56 @@
+<HTML>
+	<HEAD>
+		<META name="viewport" content="width=device-width, initial-scale=1">
+		<LINK rel="stylesheet" type="text/css" href="style.css">
+		<LINK rel="shortcut icon" href="favicon.png">
+		<TITLE>DREATH</TITLE>
+		<SCRIPT>
+			var logo, icon;
+			
+			function Awake(){
+				GetElements();
+				logo.style.opacity = 1;
+				logo.style.transform = "scale(0.8, 0.8)";
+				icon[0].style.opacity = 0.5;
+				icon[0].style.transform = "scale(1.2, 1.2)";
+				icon[1].style.opacity = 0.5;
+				icon[1].style.transform = "scale(1.2, 1.2)";
+			}
+			
+			function GetElements(){
+				logo = document.getElementById("logo");
+				icon = document.getElementsByClassName("styleIcon");
+			}
+		</SCRIPT>
+	</HEAD>
+	<BODY onload="Awake()">
+		<DIV style="width: 100%; margin-top">
+			<IMG src="favicon.png" style="opacity: 0; transform: rotateZ(25deg);" class="styleLogo styleIcon">
+			<IMG src="favicon.png" style="opacity: 0; transform: rotateZ(-25deg);" class="styleLogo styleIcon">
+			<IMG id="logo" src="LogoWhite.png" style="opacity: 0" class=styleLogo>
+		</DIV>
+		<P>DREATH is an experimental horror game based off of a dream. The final and major objective is to wake up by recalling certain memories. The progression of the game relies on how the player perceives the situation it is posing.</P>
+		<P>The player sees himself in the eyes of an unknown man, who is lost in his own dream. The purposely forgotten and rejected memories come back, deformed and misshaped and it is up to the player to decipher the problem and make the final choice.</P>
+		<HR><BIG>DOWNLOAD</BIG><BR>
+		<P>Here are the links for downloading the publicly available versions of the game. The newest versions appear first in the list.</P>
+		<HR><BIG>RELATED</BIG><BR>
+		<A target="_blank" rel="noopener noreferrer" href="https://scp-isolation.yolasite.com/">87 - An Epilogue</A><BR>
+		<A target="_blank" rel="noopener noreferrer" href="peccati">Peccati</A><BR>
+		<HR><BIG>MEDIA</BIG><BR>
+		<DIV style="display: inline-block; max-width: calc(100% - 0.5em);">
+			<iframe width="560" height="315" src="https://www.youtube.com/embed/videoseries?list=PLPfDQVZNG6Rm7WKMMAsh8d5hODYGC6a-D" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="margin: 1em; max-width: 90%;"></iframe><BR>
+			<IMG src="screen0.jpg"><BR>
+			<IMG src="screen1.jpg"><BR>
+			<IMG src="screen2.jpg"><BR>
+		</DIV><BR>
+		<HR><BIG>CONTACT GREATCORN</BIG><BR>
+		<DIV style="max-width:25em; margin:auto; text-align: right; margin-top: 1em;">
+			<IMG style="float: left; margin-top:0.3em;"src="gc.jpg">
+			<A target="_blank" rel="noopener noreferrer" href="https://www.youtube.com/GreatCornholio231432">youtube.com/GreatCornholio231432</A><BR>
+			<A target="_blank" rel="noopener noreferrer" href="https://twitter.com/GreatCornDev">twitter.com/GreatCornDev</A><BR>
+			<A target="_blank" rel="noopener noreferrer" href="mailto:greatcorndev@gmail.com">greatcorndev@gmail.com</A>
+		</DIV><BR>
+		<HR>
+		<P><SMALL>All of the assets used in the game except the textures, Unity Default Assets, Unity Engine, Unity Player and all assets licensed by Unity Technologies are licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License.<BR>Copyright GreatCorn, 2020</SMALL></P>
+	</BODY>
+</HTML>

@@ -1,0 +1,146 @@
+<HTML>
+<HEAD>
+	<META name="viewport" content="width=device-width, initial-scale=1">
+	<LINK rel="stylesheet" type="text/css" href="../style.css">
+	<TITLE>Peccati</TITLE>
+	<STYLE>
+		BODY{
+			background-color: #000;
+			background-image: url('bg.png');
+			background-repeat: repeat-x;
+			padding-top: 96px;
+			background-size: auto;
+			background-position: top;
+		}
+		.symbol{
+			transform: scale(0.8);
+			transition: transform 0.5s ease, box-shadow 0.8s ease;
+			cursor: pointer;
+			border-radius: 100%;
+			max-width: 100%;
+		}
+		.symbol:hover{
+			transform: scale(1);
+		}
+		.sAcheron:hover{
+			box-shadow: inset 0 0 64px #000, 0 0 40px #000;
+		}
+		.sLimbo:hover{
+			box-shadow: inset 0 0 64px #FFF, 0 0 40px #FFF;
+		}
+		.sLust:hover{
+			box-shadow: inset 0 0 64px #0000FF, 0 0 40px #0000FF;
+		}
+		.sGluttony:hover{
+			box-shadow: inset 0 0 64px #FF8400, 0 0 40px #FF8400;
+		}
+		.sGreed:hover{
+			box-shadow: inset 0 0 64px #7D007E, 0 0 40px #7D007E;
+		}
+		.sSloth:hover{
+			box-shadow: inset 0 0 64px #09D4FF, 0 0 40px #09D4FF;
+		}
+		.sWrath:hover{
+			box-shadow: inset 0 0 64px #FF0000, 0 0 40px #FF0000;
+		}
+		.sEnvy:hover{
+			box-shadow: inset 0 0 64px #0CFF2A, 0 0 40px #0CFF2A;
+		}
+		.sPride:hover{
+			box-shadow: inset 0 0 64px #FFFF14, 0 0 40px #FFFF14;
+		}
+		.sCocytus:hover{
+			box-shadow: inset 0 0 64px #7F7F7F, 0 0 40px #7F7F7F;
+		}
+		.symbols{
+			display: block;
+			width: fit-content;
+			margin-left: auto;
+			margin-right: auto;
+			text-align: center;
+		}
+		P{
+			color: #fff;
+			font-family: "87";
+			text-align: center;
+		}
+		.modal{
+			display: none;
+			position: fixed;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			background-color: rgb(0,0,0);
+			background-color: rgba(64,64,64,0.6);
+			overflow: auto;
+			z-index: 1;
+			cursor: pointer;
+			text-align: center;
+		}
+		.modal-content {
+			vertical-align:middle;
+			max-height: 94%;
+			max-width: 94%;
+			margin: auto;
+			z-index: 2;
+			box-shadow: 0 0 12px #000;
+		}
+		.helper { 
+			display: inline-block;
+			height: 100%;
+			vertical-align: middle;
+		}
+		SMALL{
+			color: #fff;
+			font-family: Courier;
+			text-align: center;
+		}
+	</STYLE>
+	<SCRIPT>
+		function OpenImage(imgstr){
+			if (imgstr == 'Cocytus') {
+				if (Math.random() > 0.9){
+					document.getElementById('modalContent').src = 'Cocytus.jpg';
+				}
+				else{
+					document.getElementById('modalContent').src = 'Judgement.jpg';
+				}
+				document.getElementById('modalImg').style.display = "block";
+				return;
+			}
+			document.getElementById('modalImg').style.display = "block";
+			document.getElementById('modalContent').src = imgstr+'.jpg';
+			//window.open(imgstr+'.jpg', "_blank");
+		}
+	</SCRIPT>
+	<link rel="shortcut icon" href="favicon.png">
+</HEAD>
+<BODY>
+	<DIV id='modalImg' class=modal onclick='style.display = "none"'>
+		<span class=helper></span><img class='modal-content' id='modalContent' onclick='window.open(this.src, "_blank");'>
+	</DIV>
+	<DIV class=symbols>
+		<IMG class='symbol sAcheron' src='acheron.png' onclick='OpenImage("Acheron")'>
+		<IMG class='symbol sLimbo' src='limbo.png' onclick='OpenImage("Limbo")'>
+	</DIV>
+	<DIV class=symbols>
+		<IMG class='symbol sLust' src='lust.png' onclick='OpenImage("Lust")'>
+		<IMG class='symbol sGluttony' src='gluttony.png' onclick='OpenImage("Gluttony")'>
+		<IMG class='symbol sGreed' src='greed.png' onclick='OpenImage("Greed")'>
+	</DIV>
+	<DIV class=symbols>
+		<IMG class='symbol sSloth' src='sloth.png' onclick='OpenImage("Sloth")'>
+		<IMG class='symbol sWrath' src='wrath.png' onclick='OpenImage("Wrath")'>
+		<IMG class='symbol sEnvy' src='envy.png' onclick='OpenImage("Envy")'>
+	</DIV>
+	<DIV class=symbols>	
+		<IMG class='symbol sPride' src='pride.png' onclick='OpenImage("Pride")'>
+	</DIV>
+	<DIV class=symbols>	
+		<IMG class='symbol sCocytus' src='cocytus.png' onclick='OpenImage("Cocytus")'>
+	</DIV>
+	<P>The artwork is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.</P>
+	<P><small>© GreatCorn, 2020</small></P>
+</BODY>
+</HTML>
