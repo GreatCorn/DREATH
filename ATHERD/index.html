@@ -1,0 +1,2613 @@
+<!DOCTYPE HTML>
+<HTML>
+<HEAD>
+	<META charset="utf-8">
+	<LINK rel="shortcut icon" href="./favicon.png">
+	<LINK rel="manifest" href="./manifest.json">
+	<TITLE>ATHERD</TITLE>
+	<STYLE>
+		@font-face {
+			font-family: "gameFont";
+			src: url("./font.otf");
+		}
+		BODY{
+			background-color: black;
+			margin: 0;
+		}
+		CANVAS{
+			display: block;
+			position: fixed;
+		}
+	</STYLE>
+	<SCRIPT type="importmap">
+		{
+			"imports":{
+				"three": "./three.module.js"
+			}
+		}
+	</SCRIPT>
+	<SCRIPT type="module">
+		const Release = true;
+		
+		import * as THREE from "three";
+		import { GLTFLoader } from './GLTFLoader.js';
+		
+		import { EffectComposer } from './postprocessing/EffectComposer.js';
+		import { RenderPass } from './postprocessing/RenderPass.js';
+		import { SAOPass } from './postprocessing/SAOPass.js';
+		import { ShaderPass } from './postprocessing/ShaderPass.js';
+		import { FXAAShader } from './shaders/FXAAShader.js';
+		import { AfterimagePass } from './postprocessing/AfterimagePass.js';
+		import { UnrealBloomPass } from './postprocessing/UnrealBloomPass.js';
+		import { LUTPass } from './postprocessing/LUTPass.js';
+		import { FilmPass } from './postprocessing/FilmPass.js';
+		
+		const d2r = 0.0174532925;
+		const r2d = 57.2957795130;
+		
+		const Actions = {
+			Vertical: 0.0,
+			Horizontal: 0.0,
+			LookVertical: 0.0,
+			LookHorizontal: 0.0,
+			Tilt: 0.0,
+			Run: false,
+			Crouch: false,
+			Interact: false,
+			Drag: false,
+			Blink: false,
+			Menu: false
+		}
+		const Graphics = {
+			Bloom:		true,
+			FXAA:		true,
+			MotionBlur:	true,
+			SAO:		true,
+			Materials:	true,
+			Fullscreen:	true
+		}
+		var Volume = 1.0;
+		
+		var resources = "";
+		var resourceBuffers = [];
+		var resourceProgressor = 0;
+		var resourceFile;
+		
+		const RoomType = {
+			OneWay:			"OneWay",
+			TwoWay:			"TwoWay",
+			TwoWayCorner:	"TwoWayCorner",
+			ThreeWay:		"ThreeWay",
+			FourWay:		"FourWay"
+		};
+		
+		var loaded = false;
+		var loadProgress = 0;
+		var loadAmount = 148;
+		var loadMultiplier = 160/loadAmount;
+	
+		const uiCanvas = document.createElement("canvas");
+		const ui = uiCanvas.getContext("2d");
+		var showCrowbar = false, showHand = false, showKey = false;
+		
+		var cam, light, ambLight, listener;
+		var state = -1;
+		var stateLerp = [0.0, 0.0];
+		var specialObjects = [];
+		var paused = false;
+		var rooms = [];
+		var specialRoomTimer = 12;
+		var stats;
+		
+		var deltaTime = 0.0, last = 0.0, timeScale = 1, fixDelta = false;
+		var brVol = 1.0;
+		var canBlink = false;
+		var canControl = false;
+		var gamepads = [], gamepadsPrev = [];
+		var gamepadMouse = false;
+		var keyboard = {};
+		var camFwd = new THREE.Vector3(0, 0, 0);
+		var camRot = [3.14, 0.0, 3.14, 0.0];
+		var camRotOffset = [0.0, 0.0, 0.0, 0.0];
+		var camPos = new THREE.Vector3(-2, 1, -5.5);
+		var camTilt = [0.0, 0.0];
+		var rotFwd = [0.0, 0.0];
+		var fov = 60;
+		var loudness = 0.0;
+		var sideRight = 1, sideUp = 1, walkAnim = [0,0], crouch = 0;
+		var stamina = 10.0;
+		var deadZone = 0.1;
+		var Sensitivity = 0.25;
+		var walkSpeed = 5, runSpeed = 10;
+		
+		var fishActive = false;
+		var fishPos = new THREE.Vector3(48, 0, 0);
+		
+		CanvasRenderingContext2D.prototype.drawStroked = function (text, x, y) {
+			this.strokeStyle = 'black';
+			this.lineWidth = 4;
+			this.strokeText(text, x, y);
+			this.fillStyle = 'white';
+			this.fillText(text, x, y);
+		}
+		function SetCookie(cname, cvalue, exdays) {
+			var d = new Date();
+			d.setTime(d.getTime() + (exdays*24*60*60*1000));
+			var expires = "expires="+ d.toUTCString();
+			document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+		}
+		function GetCookie(cname, cdefault) {
+			var name = cname + "=";
+			var decodedCookie = decodeURIComponent(document.cookie);
+			var ca = decodedCookie.split(';');
+			for(var i = 0; i <ca.length; i++) {
+				var c = ca[i];
+				while (c.charAt(0) == ' ') {
+					c = c.substring(1);
+				}
+				if (c.indexOf(name) == 0) {
+					return c.substring(name.length, c.length);
+				}
+			}
+			SetCookie(cname, cdefault, 365);
+			return cdefault;
+		}
+		
+		function SaveString(filename, text) {
+			var pom = document.createElement('a');
+			pom.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+			pom.setAttribute('download', filename);
+
+			if (document.createEvent) {
+				var event = document.createEvent('MouseEvents');
+				event.initEvent('click', true, true);
+				pom.dispatchEvent(event);
+			}
+			else {
+				pom.click();
+			}
+		}
+		
+		function Angleify(val){
+			let num = Repeat(val, Math.PI*2);
+			if (num > Math.PI){
+				num -= Math.PI*2;
+			}
+			return num;
+		}
+		function Clamp(val, min, max){
+			if (val < min){
+				val = min;
+			}
+			if (val > max){
+				val = max;
+			}
+			return val;
+		}
+		function DeadZone(val){
+			if (((val > 0.0) && (val < deadZone)) || ((val < 0.0) && (val > -deadZone))){
+				return 0.0;
+			}
+			return val;
+		}
+		function Lerp(a, b, t){
+			return a + (b - a) * Clamp(t, 0, 1);
+		}
+		function LerpAngle(a, b, t){
+			let num = Angleify(b - a);
+			return a + num * Clamp(t, 0, 1);
+		}
+		function RandomRange(min, max) {
+			return Math.floor(Math.random() * (max - min + 1) + min);
+		}
+		function RandomFRange(min, max) {
+			return Math.random() * (max - min + 1) + min;
+		}
+		function Repeat(t, length){
+			return t - Math.floor(t / length) * length;
+		}
+		
+		var timeOuts = [];
+		function SetTimeout(_func, _delay){
+			let timeFunc = {
+				func: _func,
+				id: timeOuts.length,
+				timer: _delay
+			}
+			timeOuts.push(timeFunc);
+		}
+		
+		async function OnLoad(){
+			const scene = new THREE.Scene();
+			const loadGLTF = new GLTFLoader();
+			const loadTexture = new THREE.TextureLoader();
+			const loadAud = new THREE.AudioLoader();
+			
+			const rend = new THREE.WebGLRenderer({antialias: true});
+			var mousePos = [0.0, 0.0];
+			var mousePrev = [0.0, 0.0];
+			
+			cam = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+			listener = new THREE.AudioListener();
+			cam.add(listener);
+			const velocity = new THREE.Vector3(0,0,0);
+			light = new THREE.PointLight(0xffffff, 0.4, 12, 2);
+			light.castShadow = true;
+			light.shadow.camera.near = 0.1;
+			light.shadow.camera.far = 25;
+			scene.add(light);
+			
+			//LOAD COOKIES
+			Graphics.Bloom =		(GetCookie("Graphics.Bloom", "true") == "true");
+			Graphics.FXAA =			(GetCookie("Graphics.FXAA", "true") == "true");
+			Graphics.MotionBlur =	(GetCookie("Graphics.MotionBlur", "true") == "true");
+			Graphics.SAO =			(GetCookie("Graphics.SAO", "true") == "true");
+			Graphics.Materials =	(GetCookie("Graphics.Materials", "true") == "true");
+			Graphics.Fullscreen =	(GetCookie("Graphics.Fullscreen", "true") == "true");
+			Sensitivity =	parseFloat(GetCookie("Sensitivity", "0.25"));
+			Volume =		parseFloat(GetCookie("Volume", "1.0"));
+			if (!Graphics.Materials){
+				loadAmount -= 20;
+				loadMultiplier = 160/loadAmount;
+			}
+			
+			listener.setMasterVolume(Volume);
+			
+			//console.log(cam);
+			
+			const ambLight = new THREE.AmbientLight(0x0);
+			scene.add(ambLight);
+			
+			scene.fog = new THREE.Fog(0x0, 0, 42);
+			scene.background = new THREE.Color(0x0);
+			
+			DrawDisclaimer(true);
+			
+			
+			function LoadResources(){
+				return new Promise(function(resolve, reject){
+					const xhttp = new XMLHttpRequest();
+					xhttp.open("GET", "./res.gcr", true);
+					xhttp.responseType = "arraybuffer";
+					
+					xhttp.onload = function(){
+						//console.log("LOADED RESOURCES");
+						resourceFile = this.response;
+						let pos = 0;
+						let dv = new DataView(resourceFile);
+						let result = [];
+						while (pos < resourceFile.byteLength-1){
+							let length = dv.getUint32(pos, true);
+							pos += 4;
+							result.push(resourceFile.slice(pos, pos+length));
+							////console.log("LENGTH: ", length);
+							pos += length;
+						}
+						//console.log("PARSED", result.length, "RESOURCES");
+						//console.log(result);
+						resolve(result);
+					}
+					xhttp.send();
+				});
+			}
+			if(Release)
+				resourceBuffers = await LoadResources();
+			function GetResource(){
+				var blob = new Blob([resourceBuffers[resourceProgressor]]);
+				++resourceProgressor;
+				return URL.createObjectURL(blob);
+			}
+			
+			function LoadImage(fname){
+				return new Promise(function(resolve, reject){
+					function loadDone(x){
+						resolve(x);
+					}
+					let _img = new Image();
+					_img.src = Release ? GetResource() : fname;
+					_img.onload = function(){
+						loadDone(_img);
+						DrawDisclaimer(true, fname);
+					};
+				});
+			}
+			const img = {
+				button:		await LoadImage("./GFX/button.png"),
+				check:		await LoadImage("./GFX/check.png"),
+				checkBox:	await LoadImage("./GFX/checkBox.png"),
+				iconCrowbar:await LoadImage("./GFX/iconCrowbar.jpg"),
+				iconHand:	await LoadImage("./GFX/iconHand.jpg"),
+				iconKey:	await LoadImage("./GFX/iconKey.jpg"),
+				logo:		await LoadImage("./GFX/logo.png"),
+				pauseMenu:	await LoadImage("./GFX/pauseMenu.png"),
+				vignette:	await LoadImage("./GFX/vignette.png")
+			}
+			
+			//console.log("Loading textures...");
+			function LoadTexture(fname){
+				return new Promise(function(resolve, reject){
+					function loadDone(x){
+						resolve(x);
+					}
+					loadTexture.load(Release ? GetResource() : fname, function(texture){
+						texture.flipY = false;
+						texture.wrapS = THREE.RepeatWrapping;
+						texture.wrapT = THREE.RepeatWrapping;
+						
+						loadDone(texture);
+						DrawDisclaimer(true, fname);
+					});
+				});
+			}
+			const tex = {
+				concrete:		await LoadTexture("./GFX/concrete.jpg"),
+				concrete_NRM:	Graphics.Materials ? await LoadTexture("./GFX/concrete_NRM.jpg")	: null,
+				
+				door:		await LoadTexture("./GFX/door.jpg"),
+				door_MTLRGH:Graphics.Materials ? await LoadTexture("./GFX/door_MTLRGH.jpg")	: null,
+				door_NRM:	Graphics.Materials ? await LoadTexture("./GFX/door_NRM.jpg")	: null,
+				
+				doorRed:	await LoadTexture("./GFX/doorRed.jpg"),
+				doorRed_NRM:Graphics.Materials ? await LoadTexture("./GFX/doorRed_NRM.jpg")	: null,
+				
+				dust:		await LoadTexture("./GFX/dust.jpg"),
+				dust1:		await LoadTexture("./GFX/dust1.jpg"),
+				dust2:		await LoadTexture("./GFX/dust2.jpg"),
+				dust3:		await LoadTexture("./GFX/dust3.jpg"),
+				
+				fish:		await LoadTexture("./GFX/fish.jpg"),
+				fish_MTLRGH:Graphics.Materials ? await LoadTexture("./GFX/fish_MTLRGH.jpg")	: null,
+				fish_NRM:	Graphics.Materials ? await LoadTexture("./GFX/fish_NRM.jpg")	: null,
+			
+				floor:		await LoadTexture("./GFX/floor.jpg"),
+				floor_DISP:	Graphics.Materials ? await LoadTexture("./GFX/floor_DISP.jpg")	: null,
+				floor_NRM:	Graphics.Materials ? await LoadTexture("./GFX/floor_NRM.jpg")	: null,
+				floor_RGH:	Graphics.Materials ? await LoadTexture("./GFX/floor_RGH.jpg")	: null,
+				
+				key:		await LoadTexture("./GFX/key.jpg"),
+				key_NRM:	Graphics.Materials ? await LoadTexture("./GFX/key_NRM.jpg")	: null,
+				
+				metal:			await LoadTexture("./GFX/metal.jpg"),
+				metal_MTLRGH:	Graphics.Materials ? await LoadTexture("./GFX/metal_MTLRGH.jpg")	: null,
+				metal_NRM:		Graphics.Materials ? await LoadTexture("./GFX/metal_NRM.jpg")		: null,
+				
+				metalFloor:			await LoadTexture("./GFX/metalFloor.jpg"),
+				metalFloor_DISP:	Graphics.Materials ? await LoadTexture("./GFX/metalFloor_DISP.jpg")		: null,
+				metalFloor_MTLRGH:	Graphics.Materials ? await LoadTexture("./GFX/metalFloor_MTLRGH.jpg")	: null,
+				metalFloor_NRM:		Graphics.Materials ? await LoadTexture("./GFX/metalFloor_NRM.jpg")		: null,
+				
+				misc:		await LoadTexture("./GFX/misc.jpg"),
+				misc_NRM:	Graphics.Materials ? await LoadTexture("./GFX/misc_NRM.jpg")	: null,
+				misc_MTLRGH:Graphics.Materials ? await LoadTexture("./GFX/misc_MTLRGH.jpg")	: null,
+				
+				paint:		await LoadTexture("./GFX/paint.jpg"),
+				paint_NRM:	Graphics.Materials ? await LoadTexture("./GFX/paint_NRM.jpg")	: null,
+
+				planks:			await LoadTexture("./GFX/planks.jpg"),
+				planks_DISP:	Graphics.Materials ? await LoadTexture("./GFX/planks_DISP.jpg")		: null,
+				planks_MTLRGH:	Graphics.Materials ? await LoadTexture("./GFX/planks_MTLRGH.jpg")	: null,
+				planks_NRM:		Graphics.Materials ? await LoadTexture("./GFX/planks_NRM.jpg")		: null,
+				
+				road:		await LoadTexture("./GFX/road.jpg"),
+				road_NRM:	Graphics.Materials ? await LoadTexture("./GFX/road_NRM.jpg")	: null,
+				
+				snow:		await LoadTexture("./GFX/snow.jpg"),
+				snow_NRM:	Graphics.Materials ? await LoadTexture("./GFX/snow_NRM.jpg")	: null,
+
+				wall:		await LoadTexture("./GFX/wall.jpg"),
+				wall_DISP:	Graphics.Materials ? await LoadTexture("./GFX/wall_DISP.jpg")	: null,
+				wall_NRM:	Graphics.Materials ? await LoadTexture("./GFX/wall_NRM.jpg")	: null,
+				wall_RGH:	Graphics.Materials ? await LoadTexture("./GFX/wall_RGH.jpg")	: null,
+				
+				wood:		await LoadTexture("./GFX/wood.jpg"),
+				wood_DISP:	Graphics.Materials ? await LoadTexture("./GFX/wood_DISP.jpg")	: null,
+				wood_RGH:	Graphics.Materials ? await LoadTexture("./GFX/wood_RGH.jpg")	: null,
+				wood_NRM:	Graphics.Materials ? await LoadTexture("./GFX/wood_NRM.jpg")	: null,
+
+				hdri:	await LoadTexture("./GFX/hdri.jpg"),
+				hdri1:	await LoadTexture("./GFX/hdri1.jpg"),
+				lut:	await LoadTexture("./GFX/PosterInv.png"),
+			};
+			
+			tex.door.flipY = false;
+			tex.doorRed.flipY = false;
+			tex.fish.flipY = false;
+			tex.key.flipY = false;
+			tex.misc.flipY = false;
+			tex.metal.repeat =			new THREE.Vector2(2, 2);
+			tex.planks.repeat =			new THREE.Vector2(1, 2);
+			tex.wood.repeat =		new THREE.Vector2(2, 2);
+			
+			tex.lut.wrapS = THREE.ClampToEdgeWrapping;
+			
+			if (Graphics.Materials){
+				tex.door_MTLRGH.flipY = false;
+				tex.door_NRM.flipY = false;
+				
+				tex.doorRed_NRM.flipY = false;
+				
+				tex.fish_MTLRGH.flipY = false;
+				tex.fish_NRM.flipY = false;
+				
+				tex.key_NRM.flipY = false;
+				
+				tex.metal_NRM.repeat =		new THREE.Vector2(2, 2);
+				tex.metal_MTLRGH.repeat =	new THREE.Vector2(2, 2);
+				
+				tex.misc_NRM.flipY = false;
+				
+				tex.planks_DISP.repeat =	new THREE.Vector2(1, 2);
+				tex.planks_NRM.repeat =		new THREE.Vector2(1, 2);
+				tex.planks_MTLRGH.repeat =	new THREE.Vector2(1, 2);
+				
+				tex.wood_DISP.repeat =	new THREE.Vector2(2, 2);
+				tex.wood_NRM.repeat =	new THREE.Vector2(2, 2);
+				tex.wood_RGH.repeat =	new THREE.Vector2(2, 2);
+			}
+			
+			const generator = new THREE.PMREMGenerator(rend);
+			const envHdri = generator.fromEquirectangular(tex.hdri);
+			const envHdri1 = generator.fromEquirectangular(tex.hdri1);
+			
+			const mat = {
+				dust: new THREE.PointsMaterial({
+					alphaMap: tex.dust1,
+					color: 0xffffff,
+					depthWrite: false,
+					size: 1.0,
+					map: tex.dust,
+					
+					sizeAttenuation: true,
+					transparent: true
+				}),
+				wall: new THREE.MeshStandardMaterial({
+					map:			tex.wall,
+					bumpMap:		tex.wall_DISP,
+					normalMap:		tex.wall_NRM,
+					roughnessMap:	tex.wall_RGH,
+					
+					/*alphaMap:		tex.wood,
+					transparent: true,*/
+					
+					normalScale:	new THREE.Vector2(0.3, 0.3),
+					
+					envMap: envHdri.texture
+				}),
+				floor: new THREE.MeshStandardMaterial({
+					map:			tex.floor,
+					bumpMap:		tex.floor_DISP,
+					normalMap:		tex.floor_NRM,
+					roughnessMap:	tex.floor_RGH,
+					
+					envMap: envHdri.texture
+				}),
+				paint: new THREE.MeshStandardMaterial({
+					map:			tex.paint,
+					normalMap:		tex.paint_NRM,
+				
+					
+					envMap: envHdri.texture
+				}),
+				glass: new THREE.MeshStandardMaterial({
+					map:			tex.paint,
+					normalMap:		tex.paint_NRM,
+					alphaMap:		tex.wood,
+					
+					transparent: true,
+					
+					envMap: envHdri.texture
+				}),
+				trans: new THREE.MeshBasicMaterial({
+					depthWrite: false,
+					opacity: 0,
+					transparent: true
+				}),
+				planks: new THREE.MeshStandardMaterial({
+					map:			tex.planks,
+					bumpMap:		tex.planks_DISP,
+					normalMap:		tex.planks_NRM,
+					roughnessMap:	tex.planks_MTLRGH,
+					metalnessMap:	tex.planks_MTLRGH,
+					
+					metalness: 0.95,
+					normalScale: new THREE.Vector2(6, 6),
+					
+					envMap: envHdri.texture
+				}),
+				wood: new THREE.MeshStandardMaterial({
+					map:			tex.wood,
+					bumpMap:		tex.wood_DISP,
+					normalMap:		tex.wood_NRM,
+					roughnessMap:	tex.wood_RGH,
+					
+					//roughness: 1.3,
+					
+					envMap: envHdri1.texture
+				}),
+				door: new THREE.MeshStandardMaterial({
+					map:			tex.door,
+					normalMap:		tex.door_NRM,
+					roughnessMap:	tex.door_MTLRGH,
+					metalnessMap:	tex.door_MTLRGH,
+					
+					metalness: 1,
+					
+					envMap: envHdri.texture
+				}),
+				doorRed: new THREE.MeshStandardMaterial({
+					map:			tex.doorRed,
+					normalMap:		tex.doorRed_NRM,
+					roughnessMap:	tex.door_MTLRGH,
+					metalnessMap:	tex.door_MTLRGH,
+					
+					metalness: 1.8,
+					roughness: 1.9,
+					
+					envMap: envHdri.texture
+				}),
+				metal: new THREE.MeshStandardMaterial({
+					map:			tex.metal,
+					normalMap:		tex.metal_NRM,
+					roughnessMap:	tex.metal_MTLRGH,
+					metalnessMap:	tex.metal_MTLRGH,
+					
+					metalness: 1,
+					
+					envMap: envHdri.texture
+				}),
+				rubber: new THREE.MeshStandardMaterial({
+					color:	0x111111,
+					normalMap:		tex.metal_NRM,
+					
+					roughness: 0.9,
+					
+					envMap: envHdri.texture
+				}),
+				misc: new THREE.MeshStandardMaterial({
+					map:			tex.misc,
+					normalMap:		tex.misc_NRM,
+					roughnessMap:	tex.misc_MTLRGH,
+					metalnessMap:	tex.misc_MTLRGH,
+					
+					metalness: 1,
+					
+					envMap: envHdri.texture
+				}),
+				key: new THREE.MeshStandardMaterial({
+					map:			tex.key,
+					normalMap:		tex.key_NRM,
+					
+					metalness: 1,
+					roughness: 0.2,
+					
+					envMap: envHdri.texture
+				}),
+				metalFloor: new THREE.MeshStandardMaterial({
+					map:			tex.metalFloor,
+					bumpMap:		tex.metalFloor_DISP,
+					normalMap:		tex.metalFloor_NRM,
+					roughnessMap:	tex.metalFloor_MTLRGH,
+					metalnessMap:	tex.metalFloor_MTLRGH,
+					
+					metalness: 1,
+					
+					envMap: envHdri1.texture
+				}),
+				light: new THREE.MeshLambertMaterial({
+					emissive: 0xfff4d6,
+					emissiveIntensity: 2
+				}),
+				fish: new THREE.MeshStandardMaterial({
+					map:			tex.fish,
+					metalnessMap:	tex.fish_MTLRGH,
+					normalMap:		tex.fish_NRM,
+					roughnessMap:	tex.fish_MTLRGH,
+					
+					envMap: envHdri.texture,
+					
+					roughness: 0.6,
+					metalness: 0.95,
+					normalScale: new THREE.Vector2(2, 2)
+				}),
+				road: new THREE.MeshStandardMaterial({
+					map:			tex.road,
+					normalMap:		tex.road_NRM,
+					
+					roughness: 0.8,
+					
+					envMap: envHdri.texture
+				}),
+				concrete: new THREE.MeshStandardMaterial({
+					map:			tex.concrete,
+					normalMap:		tex.concrete_NRM,
+					
+					roughness: 0.6,
+					
+					envMap: envHdri.texture
+				}),
+				snow: new THREE.MeshStandardMaterial({
+					map:			tex.snow,
+					normalMap:		tex.snow_NRM,
+					
+					roughness: 0.5,
+					
+					envMap: envHdri.texture
+				}),
+			};
+			DrawDisclaimer(true);
+			
+			//console.log("Loading models.");
+			function LoadGLTF(fname, materials){
+				return new Promise(function(resolve, reject){
+					function loadDone(x){
+						resolve(x);
+					}
+					loadGLTF.load(Release ? GetResource() : fname, function(mesh){
+						if (materials.length > 1)
+							for (var i=0; i<mesh.scene.children[0].children.length; ++i){
+								mesh.scene.children[0].children[i].material = materials[i];
+								if(materials[i] == mat.trans)
+									mesh.scene.children[0].children[i].visible = false;
+								else{
+									//mesh.scene.castShadow = true;
+									//mesh.scene.receiveShadows = true;
+								}
+							}
+						else{
+							mesh.scene.children[0].material = materials;
+							//mesh.scene.castShadow = true;
+							//mesh.scene.receiveShadows = true;
+						}
+						//console.log(mesh);
+						loadDone(mesh.animations.length > 0 ? mesh : mesh.scene);
+						DrawDisclaimer(true, fname);
+					});
+				});
+			}
+			const mdl = {
+				arch:[
+						await LoadGLTF("./GFX/wallArch.glb", [mat.paint, mat.planks, mat.wall, mat.trans]),
+						await LoadGLTF("./GFX/wallDoorOpen.glb", [mat.planks, mat.wall, mat.paint, mat.door, mat.trans]),
+						await LoadGLTF("./GFX/wallDoorFrame.glb", [mat.planks, mat.wall, mat.paint, mat.trans]),
+					],
+				crowbar:	await LoadGLTF("./GFX/crowbar.glb", mat.misc),
+				elecSwitch:	await LoadGLTF("./GFX/elecSwitch.glb", [mat.metal, mat.rubber]),
+				elevatorDoor:	await LoadGLTF("./GFX/elevatorDoor.glb", [mat.metal, mat.trans, mat.wood, mat.rubber]),
+				entrance:	await LoadGLTF("./GFX/87.glb", [mat.road, mat.concrete, mat.floor, mat.glass, mat.rubber, mat.metal, mat.wall, mat.metal, mat.light, mat.metalFloor, mat.concrete, mat.wall, mat.concrete, mat.snow, mat.metal, mat.snow]),
+				door:		await LoadGLTF("./GFX/door.glb", [mat.doorRed, mat.trans]),
+				doorRigged:	await LoadGLTF("./GFX/doorRigged.glb", mat.doorRed),
+				fish:		await LoadGLTF("./GFX/fish.glb", mat.fish),
+				key:		await LoadGLTF("./GFX/key.glb", [mat.key, mat.metal]),
+				lockerDoor: await LoadGLTF("./GFX/lockerDoor.glb", [mat.metal, mat.door]),
+				/*planks:[
+					await LoadGLTF("./GFX/plank1.glb", [mat.metal, mat.wood]),
+					await LoadGLTF("./GFX/plank2.glb", [mat.metal, mat.wood]),
+					await LoadGLTF("./GFX/plank3.glb", [mat.metal, mat.wood]),
+					await LoadGLTF("./GFX/plank4.glb", [mat.metal, mat.wood]),
+					await LoadGLTF("./GFX/plank5.glb", [mat.metal, mat.wood]),
+					await LoadGLTF("./GFX/plank6.glb", [mat.metal, mat.wood]),
+					],*/
+				planksR:[
+					await LoadGLTF("./GFX/plank1R.glb", mat.wood),
+					await LoadGLTF("./GFX/plank2R.glb", mat.wood),
+					await LoadGLTF("./GFX/plank3R.glb", mat.wood),
+					await LoadGLTF("./GFX/plank4R.glb", mat.wood),
+					await LoadGLTF("./GFX/plank5R.glb", mat.wood),
+					await LoadGLTF("./GFX/plank6R.glb", mat.wood),
+					],
+				room:[	
+					await LoadGLTF("./GFX/roomStraight.glb", [mat.floor, mat.light, mat.metal, mat.paint, mat.planks, mat.wall, mat.door, mat.trans]),
+					await LoadGLTF("./GFX/roomStraight1.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.door, mat.trans]),
+					await LoadGLTF("./GFX/roomStraight2.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans]),
+					await LoadGLTF("./GFX/roomC.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans]),
+					await LoadGLTF("./GFX/roomT.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans]),
+					await LoadGLTF("./GFX/roomX.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans]),
+					],
+				specialRoom:[
+					await LoadGLTF("./GFX/roomStart.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.wood, mat.metalFloor, mat.metal]),
+					await LoadGLTF("./GFX/roomExit.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans]),
+					await LoadGLTF("./GFX/roomKey.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.wood]),
+					await LoadGLTF("./GFX/roomKeyOpen.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.wood, mat.misc, mat.rubber]),
+					await LoadGLTF("./GFX/roomElec.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.rubber, mat.glass, mat.misc]),
+				],
+				wall: await LoadGLTF("./GFX/wall.glb", [mat.planks, mat.wall, mat.paint])
+			};
+			
+			/*const planksObject = new THREE.Object3D();
+			mdl.planks.forEach(function(plank){
+				/*plank.mixer = new THREE.AnimationMixer(plank.scene);
+				//console.log(plank);
+				plank.anim = plank.mixer.clipAction(plank.animations[0]),
+				plank.scene.children[0].children[0].material = mat.metal;
+				plank.scene.children[0].children[1].material = mat.wood;
+				plank.position.z += 3;
+				planksObject.add(plank);
+			});*/
+			const planksRObject = new THREE.Object3D();
+			mdl.planksR.forEach(function(plank){
+				plank.mixer = new THREE.AnimationMixer(plank.scene);
+				//console.log(plank);
+				plank.anim = plank.mixer.clipAction(plank.animations[0]);
+				plank.anim.loop = THREE.LoopOnce;
+				plank.anim.clampWhenFinished = true;
+				//console.log(plank);
+				plank.scene.children[1].children[0].material = mat.metal;
+				plank.scene.children[1].children[1].material = mat.wood;
+				plank.scene.position.z += 3;
+				planksRObject.add(plank.scene);
+			});
+			
+			var PlankAnim = [false];
+			//SET ROOM TYPES
+				mdl.room[0].roomType = RoomType.TwoWay;
+				mdl.room[1].roomType = RoomType.TwoWay;
+				mdl.room[2].roomType = RoomType.TwoWay;
+				mdl.room[3].roomType = RoomType.TwoWayCorner;
+				mdl.room[4].roomType = RoomType.ThreeWay;
+				mdl.room[5].roomType = RoomType.FourWay;
+			var specialActive = [false, false, false, false, false];
+				mdl.specialRoom[0].roomType = RoomType.OneWay;
+				mdl.specialRoom[1].roomType = RoomType.OneWay;
+				mdl.specialRoom[2].roomType = RoomType.OneWay;
+				mdl.specialRoom[3].roomType = RoomType.OneWay;
+				mdl.specialRoom[4].roomType = RoomType.OneWay;
+				
+			mdl.doorRigged.scene.children[0].children[1].children[0].material = mat.doorRed;
+			mdl.doorRigged.scene.children[0].children[1].children[1].material = mat.trans;
+			mdl.doorRigged.scene.children[0].children[1].children[1].visible = false;
+			mdl.doorRigged.mixer = new THREE.AnimationMixer(mdl.doorRigged.scene);
+			mdl.doorRigged.actions = [
+				mdl.doorRigged.mixer.clipAction(mdl.doorRigged.animations[0]),
+				mdl.doorRigged.mixer.clipAction(mdl.doorRigged.animations[1])
+			];
+			mdl.doorRigged.actions[0].loop = THREE.LoopOnce;
+			mdl.doorRigged.actions[1].loop = THREE.LoopOnce;
+			mdl.doorRigged.actions[0].clampWhenFinished = true;
+			mdl.doorRigged.actions[1].clampWhenFinished = true;
+			
+			mdl.fish.scene.children[0].children[1].material = mat.fish;
+			mdl.fish.mixer = new THREE.AnimationMixer(mdl.fish.scene);
+			mdl.fish.actions = [
+				mdl.fish.mixer.clipAction(mdl.fish.animations[0]),
+				mdl.fish.mixer.clipAction(mdl.fish.animations[1]),
+				mdl.fish.mixer.clipAction(mdl.fish.animations[2]),
+				mdl.fish.mixer.clipAction(mdl.fish.animations[3]),
+			];
+			//0 - walk, 1 - alert, 2 - run, 3 - idle
+			mdl.fish.head = mdl.fish.scene.getObjectByProperty("name", "mixamorigHead");
+				//FISH PARAMS
+				mdl.fish.alert = false;
+				mdl.fish.blocked = true;
+				mdl.fish.chargeUp = 0.0;
+				mdl.fish.coolDown = 0.0;
+				mdl.fish.curSpeed = 0.0;
+				mdl.fish.lastPlayerPosition = new THREE.Vector3(0, 0, 0);
+				mdl.fish.noticed = false;
+				mdl.fish.prevPos = new THREE.Vector3(0, 0, 0);
+				mdl.fish.seesPlayer = false;
+				mdl.fish.speed = 0.0;
+				mdl.fish.stamina = 0.0;
+				mdl.fish.stepTimer = 0.0;
+				mdl.fish.stuckTimer = 0.0;
+				mdl.fish.thinking = false;
+				
+			function LoadSound(fname, minDistance = 0, maxDistance = 32){
+				return new Promise(function(resolve, reject){
+					function loadDone(x){
+						resolve(x);
+					}
+					let sound
+					if (minDistance > 0){
+						sound = new THREE.PositionalAudio(listener);
+						sound.setRefDistance(minDistance);
+						sound.setMaxDistance(maxDistance);
+					}
+					else
+						sound = new THREE.Audio(listener);
+					loadAud.load(Release ? GetResource() : fname, function(buffer){
+						sound.setBuffer(buffer);
+						loadDone(sound);
+						DrawDisclaimer(true, fname);
+					});
+				});
+			}
+			const snd = {
+				ambience: await LoadSound("./SFX/ambience.mp3"),
+				breathing: await LoadSound("./SFX/breathing.mp3"),
+				breathingHeavy: await LoadSound("./SFX/breathingHeavy.mp3"),
+				crowbar:	await LoadSound("./SFX/crowbar.mp3"),
+				doorBudge: await LoadSound("./SFX/doorBudge.mp3", 4, 12),
+				elevator: await LoadSound("./SFX/elevator.mp3"),
+				elevatorOpen: await LoadSound("./SFX/elevatorOpen.mp3", 4, 10),
+				fishstep: [	0,
+							await LoadSound("./SFX/fishstep-01.mp3", 4, 10), 
+							await LoadSound("./SFX/fishstep-02.mp3", 4, 10), 
+							await LoadSound("./SFX/fishstep-03.mp3", 4, 10), 
+							await LoadSound("./SFX/fishstep-04.mp3", 4, 10), 
+							await LoadSound("./SFX/fishstep-05.mp3", 4, 10), 
+							await LoadSound("./SFX/fishstep-06.mp3", 4, 10)],
+				gunshot:	await LoadSound("./SFX/gunshot.mp3"),
+				horror: [	0,
+							await LoadSound("./SFX/horror-01.mp3"), 
+							await LoadSound("./SFX/horror-02.mp3"), 
+							await LoadSound("./SFX/horror-03.mp3"), 
+							await LoadSound("./SFX/horror-04.mp3")],
+				keys: await LoadSound("./SFX/keys.mp3"),
+				lockerOpen:		await LoadSound("./SFX/lockerOpen.mp3", 4, 14),
+				lockerBudge:	await LoadSound("./SFX/lockerBudge.mp3", 4, 14),
+				monster:		await LoadSound("./SFX/monster.mp3", 4, 12),
+				nex: [ 0,
+						await LoadSound("./SFX/nex-01.mp3"), 
+						await LoadSound("./SFX/nex-02.mp3"), 
+						await LoadSound("./SFX/nex-03.mp3")],
+				powerDown:	await LoadSound("./SFX/powerDown.mp3"),
+				powerUp:	await LoadSound("./SFX/powerUp.mp3"),
+				step: [	0,
+						await LoadSound("./SFX/step-01.mp3"), 
+						await LoadSound("./SFX/step-02.mp3"), 
+						await LoadSound("./SFX/step-03.mp3"), 
+						await LoadSound("./SFX/step-04.mp3"), 
+						await LoadSound("./SFX/step-05.mp3"), 
+						await LoadSound("./SFX/step-06.mp3"), 
+						await LoadSound("./SFX/step-07.mp3"), 
+						await LoadSound("./SFX/step-08.mp3"),
+						await LoadSound("./SFX/step-09.mp3"),
+						await LoadSound("./SFX/step-10.mp3"),
+						await LoadSound("./SFX/step-11.mp3"),
+						await LoadSound("./SFX/step-12.mp3"),
+						await LoadSound("./SFX/step-13.mp3"),
+						await LoadSound("./SFX/step-14.mp3")],
+				sus: [ 0,
+						await LoadSound("./SFX/sus-01.mp3"), 
+						await LoadSound("./SFX/sus-02.mp3"), 
+						await LoadSound("./SFX/sus-03.mp3")],
+				wood: [ 0,
+						await LoadSound("./SFX/wood-01.mp3", 4, 12), 
+						await LoadSound("./SFX/wood-02.mp3", 4, 12), 
+						await LoadSound("./SFX/wood-03.mp3", 4, 12), 
+						await LoadSound("./SFX/wood-04.mp3", 4, 12)],
+						
+				music: [ 0,
+					await LoadSound("./SFX/music-exit.mp3"),
+					await LoadSound("./SFX/music-run.mp3", 6, 24),
+					await LoadSound("./SFX/music-realization.mp3")]
+			};
+			mdl.doorRigged.scene.add(snd.doorBudge);
+			mdl.doorRigged.scene.add(snd.wood[1]);
+			mdl.doorRigged.scene.add(snd.wood[2]);
+			mdl.doorRigged.scene.add(snd.wood[3]);
+			mdl.doorRigged.scene.add(snd.wood[4]);
+			mdl.doorRigged.actions[0].play();
+			
+			mdl.fish.scene.add(snd.fishstep[1]);
+			mdl.fish.scene.add(snd.fishstep[2]);
+			mdl.fish.scene.add(snd.fishstep[3]);
+			mdl.fish.scene.add(snd.fishstep[4]);
+			mdl.fish.scene.add(snd.fishstep[5]);
+			mdl.fish.scene.add(snd.fishstep[6]);
+			
+			snd.monster.loop = true;
+			
+			snd.ambience.loop = true;
+			snd.ambience.play();
+			
+			snd.breathingHeavy.loop = true;
+			
+			snd.music[2].loop = true;
+			mdl.fish.scene.add(snd.music[2]);
+			
+			/*const reverb = listener.context.createConvolver();
+			listener.buffer = snd.sus[1].buffer;
+			listener.setFilter(reverb);*/
+			
+			function AddFish(){
+				snd.monster.play();
+				mdl.fish.scene.add(snd.monster);
+				mdl.fish.actions[0].play();
+				mdl.fish.actions[1].play();
+				mdl.fish.actions[2].play();
+				mdl.fish.actions[3].play();
+				mdl.fish.scene.position.copy(fishPos);
+				scene.add(mdl.fish.scene);
+				fishActive = true;
+			}
+			
+			rend.autoClear = false;
+			rend.setPixelRatio(window.devicePixelRatio);
+			rend.setSize(window.innerWidth, window.innerHeight);
+			rend.outputEncoding = THREE.LinearEncoding
+			rend.shadowMap.enabled = false;
+			//rend.shadowMap.type = THREE.BasicShadowMap;
+			rend.toneMappingExposure = 1.5;
+			rend.toneMapping = THREE.ACESFilmicToneMapping;
+			document.body.insertBefore(rend.domElement, uiCanvas);
+			
+			window.onresize = function(){
+				const width = window.innerWidth;
+				const height = window.innerHeight;
+
+				cam.aspect = width / height;
+				cam.updateProjectionMatrix();
+				
+				uiCanvas.width = width;
+				uiCanvas.height = height;
+				ui.font = "32px gameFont";
+
+				rend.setSize(width, height);
+				composer.setSize(width, height);
+				
+				const pixelRatio = rend.getPixelRatio();
+				
+				fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
+				fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
+			}
+			
+			if (!Release){
+				stats = new Stats();
+				document.body.appendChild(stats.dom);
+			}
+			
+			//COMPOSER AND POST-PROCESSING EFFECTS
+			const composer = new EffectComposer(rend);
+			
+			const renderPass = new RenderPass(scene, cam);
+			composer.addPass(renderPass);
+			
+			//FXAA
+			const fxaaPass = new ShaderPass(FXAAShader);
+			const pixelRatio = rend.getPixelRatio();
+			fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
+			fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
+			if(Graphics.FXAA)
+				composer.addPass(fxaaPass);
+			
+			//SAO
+			const saoPass = new SAOPass(scene, cam, true, true);
+			//saoPass.params.saoBlur = false;
+			saoPass.params.saoBias = -1;
+			saoPass.params.saoIntensity = 0.02;
+			saoPass.params.saoScale = 1;
+			saoPass.params.saoKernelRadius = 50;
+			if(Graphics.SAO)
+				composer.addPass(saoPass);
+			
+			//BLOOM
+			const bloomPass = new UnrealBloomPass( new THREE.Vector2( window.innerWidth, window.innerHeight ), 1.5, 1.2, 0.6 );
+			if(Graphics.Bloom)
+				composer.addPass(bloomPass);
+				
+			//FILM
+			var filmPass = new FilmPass(0.2, 0, 0, false);
+			composer.addPass(filmPass);
+			/*filmPass.fsQuad.onBeforeRender = function(){
+				filmPass.material.uniforms["nIntensity"] = 0.0;
+				filmPass.material.uniformsNeedUpdate = true;
+				//console.log("Hello");
+			}*/
+			
+			//AFTERIMAGE
+			const afterimagePass = new AfterimagePass(0.6);
+			if(Graphics.MotionBlur)
+				composer.addPass(afterimagePass);
+			
+			//BLUR
+			/*const hblur = new ShaderPass(HorizontalBlurShader);
+			composer.addPass(hblur);
+			const vblur = new ShaderPass(VerticalBlurShader);
+			vblur.renderToScreen = true;
+			composer.addPass(vblur);*/
+			
+			//LUT
+			const lutPass = new LUTPass();
+			lutPass.lut = tex.lut;
+			composer.addPass( lutPass );
+			
+			//DOF
+			/*const bokehPass = new BokehPass(scene, cam, {
+				focus: 1200,
+				aperture: 10,
+				maxblur: 0.05,
+
+				width: window.innerWidth,
+				height: window.innerHeight
+			});
+			composer.addPass(bokehPass);*/
+			DrawDisclaimer(true);
+			
+			//CONTROLS
+			document.onkeydown = function(event){
+				keyboard[event.keyCode] = true;
+				//MAPPINGS
+				switch(event.keyCode){
+					case 87: Actions.Vertical	=  1.0;		break;
+					case 83: Actions.Vertical	= -1.0;		break;
+					case 65: Actions.Horizontal	=  1.0;		break;
+					case 68: Actions.Horizontal	= -1.0;		break;
+					case 16: Actions.Run		=  true;	break;
+					case 67: Actions.Crouch		=  true;	break;
+					case 69: Actions.Tilt		= -1.0;		break;
+					case 81: Actions.Tilt		=  1.0;		break;
+					case 27: Actions.Menu		=  true;	break;
+					case 70: if (!Release) timeScale = 6;	break;
+					case 71: 
+						if (!Release){
+							resources = 
+							SaveString("resources.txt", resources);
+						}
+						break;
+					case 72: 
+						if (!Release){
+							/*scene.add(planksRObject);
+							var i=0;
+							function plf(){
+								SetTimeout(function(){
+									mdl.planksR[i].anim.play();
+									if(i<mdl.planksR.length){
+										++i;
+										plf();
+									}
+								}, i*1000);
+							}
+							plf();*/
+							state = 9;
+						}
+						break;
+					case 73: 
+						if (!Release){
+							ParticleDust(camPos, 2, 1, 5, 0.2, 1, 0x9e8175);
+						}
+						break;
+					case 74: 
+						if (!Release){
+							ParticleDust(camPos, 6, 0.06, 0.1, 3, 1, 0x222222);
+							//console.log(specialObjects[9]);
+						}
+						break;
+					case 75: 
+						if (!Release){
+							AddFish();
+						}
+						break;
+				}
+			}
+			document.onkeyup = function(event){
+				keyboard[event.keyCode] = false;
+				//MAPPINGS
+				switch(event.keyCode){
+					case 87: Actions.Vertical	=  0.0;		break;
+					case 83: Actions.Vertical	=  0.0;		break;
+					case 65: Actions.Horizontal	=  0.0;		break;
+					case 68: Actions.Horizontal	=  0.0;		break;
+					case 16: Actions.Run		=  false;	break;
+					case 67: Actions.Crouch		=  false;	break;
+					case 69: Actions.Tilt		=  0.0;		break;
+					case 81: Actions.Tilt		=  0.0;		break;
+					case 70: if (!Release) timeScale = 1;	break;
+				}
+			}
+			document.onmousemove = function(event){
+				Actions.LookVertical = -event.movementY;
+				Actions.LookHorizontal = -event.movementX;
+				mousePos = [event.clientX, event.clientY];
+				gamepadMouse = false;
+			}
+			document.onmousedown = function(event){
+				switch(event.button){
+					case 0:	Actions.Drag = true;	break;
+					case 1:	Actions.Blink = true;	break;
+				}
+			}
+			document.onmouseup = function(event){
+				switch(event.button){
+					case 0:	Actions.Drag = false;	break;
+					case 1:	Actions.Blink = false;	break;
+				}
+			}
+			
+			
+			//console.log("Scene initialized.");
+			
+			const worldColliders = new THREE.Object3D();
+			scene.add(worldColliders);
+			
+			function CreateRoom(num, special = false){
+				let tempRoom = special ? mdl.specialRoom[num].clone() : mdl.room[num].clone();
+				tempRoom.roomType = special ? mdl.specialRoom[num].roomType : mdl.room[num].roomType;
+				//tempRoom.position.set(x, 0, y);
+				
+				tempRoom.canGenerate = true;
+				tempRoom.discovered = false;
+				tempRoom.connected = [];
+				tempRoom.doorWays = [];
+				tempRoom.generated = [];
+				tempRoom.roomID = rooms.length;
+				tempRoom.specialNum = 0; 
+				switch(tempRoom.roomType){
+					case RoomType.OneWay:
+						tempRoom.doorWays = [mdl.wall.clone()];
+						tempRoom.doorWays[0].position.set( 0, 0, 4);
+						tempRoom.doorWays[0].rotateY(180*d2r);
+						break;
+					case RoomType.TwoWay:
+						tempRoom.doorWays = [mdl.wall.clone(), mdl.wall.clone()];
+						tempRoom.doorWays[0].position.set(-4, 0, 0);
+						tempRoom.doorWays[0].rotateY( 90*d2r);
+						tempRoom.doorWays[1].position.set( 4, 0, 0);
+						tempRoom.doorWays[1].rotateY(-90*d2r);
+						break;
+					case RoomType.TwoWayCorner:
+						tempRoom.doorWays = [mdl.wall.clone(), mdl.wall.clone()];
+						tempRoom.doorWays[0].position.set(-4, 0, 0);
+						tempRoom.doorWays[0].rotateY( 90*d2r);
+						tempRoom.doorWays[1].position.set( 0, 0, 4);
+						tempRoom.doorWays[1].rotateY(180*d2r);
+						break;
+					case RoomType.ThreeWay:
+						tempRoom.doorWays = [mdl.wall.clone(), mdl.wall.clone(), mdl.wall.clone()];
+						tempRoom.doorWays[0].position.set(-4, 0, 0);
+						tempRoom.doorWays[0].rotateY( 90*d2r);
+						tempRoom.doorWays[1].position.set( 4, 0, 0);
+						tempRoom.doorWays[1].rotateY(-90*d2r);
+						tempRoom.doorWays[2].position.set( 0, 0, 4);
+						tempRoom.doorWays[2].rotateY(180*d2r);
+						break;
+					case RoomType.FourWay:
+						tempRoom.doorWays = [mdl.wall.clone(), mdl.wall.clone(), mdl.wall.clone(), mdl.wall.clone()];
+						tempRoom.doorWays[0].position.set(-4, 0, 0);
+						tempRoom.doorWays[0].rotateY( 90*d2r);
+						tempRoom.doorWays[1].position.set( 4, 0, 0);
+						tempRoom.doorWays[1].rotateY(-90*d2r);
+						tempRoom.doorWays[2].position.set( 0, 0,-4);
+						tempRoom.doorWays[3].position.set( 0, 0, 4);
+						tempRoom.doorWays[3].rotateY(180*d2r);
+						break;
+				}
+				tempRoom.doorWays.forEach(function(door){
+					tempRoom.generated.push(false);
+					tempRoom.add(door);
+				});
+				
+				if (special){
+					switch(num){
+						case 0:
+							/*tempRoom.light = new THREE.PointLight(0xfff4d6, 0.6, 6);
+							tempRoom.light.position.set(-2, 2.7, -5.2);
+							tempRoom.light.castShadow = true;
+							tempRoom.light.shadow.camera.near = 0.1;
+							tempRoom.light.shadow.camera.far = 25;
+							tempRoom.add(tempRoom.light);*/
+							
+							specialObjects[0] = mdl.elevatorDoor.clone();
+							specialObjects[0].position.set(-2, 0, -3.8);
+							tempRoom.add(specialObjects[0]);
+							specialObjects[1] = mdl.elevatorDoor.clone();
+							specialObjects[1].position.set(-2, 0, -3.8);
+							specialObjects[1].rotateY(Math.PI);
+							tempRoom.add(specialObjects[1]);
+							
+							
+							specialObjects[2] = new THREE.PointLight(0xebd7a0, 0.2, 5);
+							specialObjects[2].position.set(-2, 0, 0);
+							//specialObjects[2].castShadow = true;
+							tempRoom.add(specialObjects[2]);
+							
+							snd.elevatorOpen.position.set(-2, 0, -3.8);
+							tempRoom.add(snd.elevatorOpen);
+							break;
+						case 1:
+							mdl.doorRigged.scene.position.set(-0.9, 0, -3.7);
+							mdl.doorRigged.scene.rotation.y = Math.PI;
+							tempRoom.add(mdl.doorRigged.scene);
+							planksRObject.position.z = -3
+							planksRObject.coolDown = 0.0;
+							planksRObject.shownHand = false;
+							planksRObject.plank = -1;
+							tempRoom.add(planksRObject);
+							break;
+						case 2:
+						case 3:
+							if (state < 7){
+								specialObjects[4] = mdl.key.clone();
+								specialObjects[4].position.set(-3.84, 1.07, -2.1);
+								tempRoom.add(specialObjects[4]);
+							}
+							break;
+						case 4:
+							specialObjects[5] = mdl.lockerDoor.clone();
+							specialObjects[5].position.set(0.9, 0, 3.29);
+							specialObjects[5].shownHand = false;
+							specialObjects[5].rotation.y = (state > 7) ? Math.PI*0.5 : 0;
+							specialObjects[5].add(snd.lockerOpen);
+							specialObjects[5].add(snd.lockerBudge);
+							tempRoom.add(specialObjects[5]);
+							
+							specialObjects[6] = mdl.elecSwitch.clone();
+							specialObjects[6].position.set(-1.65, 0.6, 1.97);
+							specialObjects[6].shownHand = false;
+							specialObjects[6].switchRot = [(state > 4) ? 0 : Math.PI];
+							specialObjects[6].switchRot[1] = specialObjects[6].switchRot[0];
+							specialObjects[6].rotation.x = specialObjects[6].switchRot[0];
+							tempRoom.add(specialObjects[6]);
+							
+							if (state < 9){
+								specialObjects[7] = mdl.crowbar.clone();
+								specialObjects[7].position.set(1.6, -1.1, 2.79);
+								specialObjects[7].shownHand = false;
+								tempRoom.add(specialObjects[7]);
+							}
+							break;
+					}
+					tempRoom.specialNum = num; 
+				}
+				/*let tempLight = new THREE.PointLight(0xfff4d6, 0.5, 8);
+				tempLight.position.y = 2
+				tempRoom.add(tempLight);*/
+				
+				//tempRoom.rotation.y = rot*d2r;
+				
+				//BUILD COLLIDERS
+				/*tempRoom.colliders = [];
+				switch(tempRoom.roomType){
+					case RoomType.TwoWay:
+						if ((rot == 90) || (rot == 270)){
+							tempRoom.colliders[0] = new THREE.Box2(new THREE.Vector2(-3, -4),	new THREE.Vector2(-2, 4));
+							tempRoom.colliders[1] = new THREE.Box2(new THREE.Vector2( 2, -4),	new THREE.Vector2( 3, 4));
+						}
+						else{
+							tempRoom.colliders[0] = new THREE.Box2(new THREE.Vector2(-4, -3),	new THREE.Vector2(4, -2));
+							tempRoom.colliders[1] = new THREE.Box2(new THREE.Vector2(-4,  2),	new THREE.Vector2(4,  3));
+						}
+						break;
+				}
+				//console.log(tempRoom);*/
+				
+				
+				rooms.push(tempRoom);
+				worldColliders.add(tempRoom);
+				
+				////console.log("ROOM: Created room:", num, tempRoom);
+				
+				return tempRoom;
+			}
+			var startRoom = CreateRoom(0, true);
+			Generate(startRoom);
+			Generate(startRoom.connected[0].parent);
+			
+			function UpdateRoomIDs(){
+				//GLOBAL ROOM ID UPDATE
+				for (var i=0; i<rooms.length; ++i)
+					rooms[i].roomID = i;
+			}
+			function ParticleDust(pos, size=1.0, velocity=0.1, speed=1.0, area=1.0, opacity=1.0, color=0xffffff){
+				if(specialObjects[9])
+					specialObjects[9].parent.remove(specialObjects[9]);
+				specialObjects[9] = new THREE.Object3D();
+				specialObjects[9].position.copy(pos);
+				specialObjects[9].velocity = velocity;
+				specialObjects[9].speed = speed;
+				var particleNumber = RandomRange(32, 48);
+				for (var i=0; i<particleNumber; ++i){
+					var _geometry = new THREE.BufferGeometry();
+					_geometry.setAttribute('position', new THREE.Float32BufferAttribute([0.0, 0.0, 0.0], 3));
+					var _particle = new THREE.Points(_geometry, mat.dust.clone());
+					_particle.material.color = new THREE.Color(color);
+					_particle.material.opacity = opacity;
+					_particle.material.size = size+RandomFRange(-size*0.2, size*0.2);
+					if (Math.random() > 0.5)
+						_particle.material.map = (Math.random() > 0.5) ? tex.dust2 : tex.dust3;
+					_particle.position.set(RandomFRange(-area, area), RandomFRange(-area, area), RandomFRange(-area, area));
+					_particle.rotation.z = RandomFRange(0, 6.28);
+					_particle.velocity = new THREE.Vector3(RandomFRange(-1, 1), -Math.random(), RandomFRange(-1, 1));
+					specialObjects[9].add(_particle);
+				}
+				scene.add(specialObjects[9]);
+			}
+			
+			function OnAnimate(now) {
+				if (!isNaN(now)){
+					if(fixDelta){
+						last = now;
+						fixDelta = false;
+					}
+					deltaTime = Math.min(1, (now - last) * 0.001) * timeScale;
+					last = now;
+				}
+				timeOuts.forEach(function(timeOut){
+					timeOut.timer -= deltaTime*1000;
+					if (timeOut.timer <= 0.0){
+						timeOut.func();
+						//console.log("TIMEOUT: Executing function");
+						timeOuts.splice(timeOut.id, 1);
+						for(var i=0; i<timeOuts.length; ++i){
+							timeOuts[i].id = i;
+						}
+					}
+				});
+				State();
+				
+				//var globalCamPos = new THREE.Vector3();
+				//cam.getWorldPosition(globalCamPos);
+				light.position.copy(cam.position);
+				
+				if(fishActive)
+					FishAI();
+					
+				
+				cam.fov = fov;
+				if(state < 10){
+					camRot[2] = Lerp(camRot[2], camRot[0]+(walkAnim[0]+camRotOffset[2])*d2r, deltaTime*18);
+					camRot[3] = Lerp(camRot[3], camRot[1]+(walkAnim[1]+camRotOffset[3])*d2r, deltaTime*18);
+					if (Math.random() > 0.8){
+						camRotOffset[0] = RandomFRange(-0.2, 0.2);
+						camRotOffset[1] = RandomFRange(-0.2, 0.2);
+					}
+					camRotOffset[2] = Lerp(camRotOffset[2], camRotOffset[0], deltaTime);
+					camRotOffset[3] = Lerp(camRotOffset[3], camRotOffset[1], deltaTime);
+					cam.quaternion.setFromEuler(new THREE.Euler(camRot[3], camRot[2], camTilt[1], 'YXZ'));
+				}
+				
+				cam.position.lerp(new THREE.Vector3(camPos.x+camTilt[1]*camFwd.z*2, camPos.y, camPos.z-camTilt[1]*camFwd.x*2), deltaTime*18);
+				cam.updateProjectionMatrix();
+				
+				GamepadActions();
+				if(canControl && (!canBlink || !Actions.Blink))
+					Controls();
+				//BLING
+				if(state < 10)
+					scene.fog.far = (Actions.Blink && canBlink) ? Lerp(scene.fog.far, 0, deltaTime*16) : Lerp(scene.fog.far, 42-Math.abs(stamina-10.0), deltaTime*8);
+				brVol = (Actions.Blink && canBlink) ? Lerp(brVol, 0.3, deltaTime) : Lerp(brVol, 0.0, deltaTime*6);
+				snd.breathing.setVolume(brVol);
+				snd.breathingHeavy.setVolume(Clamp(Clamp(Math.abs(stamina*0.2-2), 0.0, 1.0)-brVol*4, 0.0, 1.0));
+				
+				if (state < 10)
+					RoomGenerator();
+				
+				Particles();
+				if (!Release) stats.begin();
+				composer.render();
+				UI();
+				if (!Release) stats.end();
+				
+				
+				if(Actions.Interact)
+					Actions.Interact = false;
+				if(Actions.Menu)
+					Actions.Menu = false;
+					
+				//PLANKS ANIMATIONS DIDN'T WORK
+				//THEY ACTUALLY DID
+				/*for (var i=0; i<PlankAnim.length; ++i){
+					if (PlankAnim[i]){
+						mdl.planks[i].anim.time += deltaTime;
+						var trackPos = mdl.planks[i].anim._clip.tracks[0];
+						var trackRot = mdl.planks[i].anim._clip.tracks[1];
+						for (var j=0; j<trackPos.times.length; ++j){
+							if(mdl.planks[i].anim.time - trackPos.times[j] < 0){
+								mdl.planks[i].scene.position.set(trackPos.values[j*3], trackPos.values[j*3+1], trackPos.values[j*3+2]);
+								mdl.planks[i].scene.quaternion.set(trackRot.values[j*4], trackRot.values[j*4+1], trackRot.values[j*4+2], trackRot.values[j*4+3]);
+								break;
+							}
+						}
+					}
+				}*/
+					
+				if ((mousePrev[0] == mousePos[0]) && (mousePrev[1] == mousePos[1])){
+					Actions.LookHorizontal = 0.0;
+					Actions.LookVertical = 0.0;
+				}
+				mousePrev = mousePos;
+				
+				requestAnimationFrame(OnAnimate);
+			}
+			
+			function FishAI(){
+				let fishT = mdl.fish.scene;
+				fishT.position.lerp(fishPos, deltaTime*12);
+				
+				function Teleport(){
+					let newPos = new THREE.Vector3(camPos.x + Math.round(rotFwd[0])*64, 0, camPos.z + Math.round(rotFwd[1])*64);
+					fishPos.copy(newPos);
+					fishT.position.copy(newPos);
+					mdl.fish.stuckTimer = RandomFRange(12, 40);
+					//console.log("FISH: Teleporting");
+				}
+				
+				canBlink = !mdl.fish.noticed;
+				
+				//GET SPEED
+				let curMove = new THREE.Vector3().subVectors(fishT.position, mdl.fish.prevPos);
+				mdl.fish.curSpeed = curMove.length() * deltaTime * 1000;
+				mdl.fish.prevPos.copy(fishT.position);
+				
+				//ANIMATIONS
+				mdl.fish.actions[0].timeScale = mdl.fish.curSpeed;
+				mdl.fish.actions[2].timeScale = mdl.fish.curSpeed*0.5;
+				
+				mdl.fish.actions[0].weight = Lerp(mdl.fish.actions[0].weight, mdl.fish.noticed ? 0 : ((mdl.fish.curSpeed < 0.2) ? 0 : 1), deltaTime*5);//walk
+				mdl.fish.actions[1].weight = Lerp(mdl.fish.actions[1].weight, mdl.fish.alert   ? ((mdl.fish.curSpeed < 0.2) ? 1 : 0) : 0, deltaTime*6);//alert
+				mdl.fish.actions[2].weight = Lerp(mdl.fish.actions[2].weight, mdl.fish.noticed ? mdl.fish.curSpeed*0.3 : 0, deltaTime*6);//run
+				mdl.fish.actions[3].weight = Lerp(mdl.fish.actions[3].weight, mdl.fish.alert   ? 0 : ((mdl.fish.curSpeed < 0.2) ? 1 : 0), deltaTime*3);//idle
+				mdl.fish.mixer.update(deltaTime);
+				if (mdl.fish.curSpeed > 0.2){
+					mdl.fish.stepTimer -= mdl.fish.curSpeed*0.015;
+					if (mdl.fish.stepTimer < 0.0){
+						PlayRandomSound(snd.fishstep);
+						mdl.fish.stepTimer = 0.65;
+					}
+				}
+				//VISIBILITY OF THE PLAYER
+				const dist = fishPos.distanceTo(camPos);
+					let dir = new THREE.Vector3().subVectors(camPos, fishPos).normalize();
+					let dirInv = dir.clone().negate();
+				mdl.fish.blocked = ((new THREE.Raycaster(mdl.fish.head.position, dir, 0, dist).intersectObjects(worldColliders.children).length > 0) || (new THREE.Raycaster(camPos, dirInv, 0, dist).intersectObjects(worldColliders.children).length > 0));
+					let fwd = new THREE.Vector3();
+					mdl.fish.head.getWorldDirection(fwd);
+					let other = new THREE.Vector3().subVectors(camPos, mdl.fish.head.getWorldPosition(new THREE.Vector3())).normalize();
+					let product = fwd.x * other.x + fwd.y * other.y + fwd.z * other.z;
+				mdl.fish.seesPlayer = (product > -0.3);
+				////console.log(0.95-crouch*0.96);	
+				
+				const distToLast = fishPos.distanceTo(mdl.fish.lastPlayerPosition);
+				//MOVIMENTO
+				if ((distToLast > 1.5) && (mdl.fish.chargeUp <= 0.0)){
+					let fishRot = LerpAngle(fishT.rotation.y, Math.atan2(mdl.fish.lastPlayerPosition.x - fishT.position.x, mdl.fish.lastPlayerPosition.z - fishT.position.z), deltaTime*6);
+					fishT.rotation.y = fishRot;
+					let fishVel = new THREE.Vector3();
+					fishT.getWorldDirection(fishVel);
+					fishVel.y = 0;
+					fishVel.multiplyScalar(deltaTime*mdl.fish.speed);
+					fishVel.copy(TestCollision(fishT.position, fishVel, 1));
+					fishPos.add(fishVel);
+				}
+				if (distToLast < 1.5){
+					mdl.fish.stamina = 0.0;
+				}
+				//SOUND NOTICING
+				if((Math.random() < (loudness-0.2)) && (dist < 28)){
+					if(!mdl.fish.alert)
+						PlayRandomSound(snd.sus);
+					mdl.fish.coolDown = RandomFRange(5, 8);
+					mdl.fish.alert = true;
+					let randMax = dist*0.15;
+					if (mdl.fish.stamina <= 0.0)
+						mdl.fish.lastPlayerPosition.copy(new THREE.Vector3(RandomFRange(-randMax, randMax) + camPos.x, 0, RandomFRange(-randMax, randMax) + camPos.z));
+					//console.log("FISH: I heard that");
+				}
+				var musVol = snd.music[2].getVolume(musVol);
+				if (mdl.fish.noticed){
+					if (!snd.music[2].isPlaying){
+						snd.music[2].play();
+					}
+					if (musVol < 0.99)
+						snd.music[2].setVolume(Lerp(musVol, 1.0, deltaTime*8));
+					
+					mdl.fish.alert = true;
+					if (!mdl.fish.blocked && mdl.fish.seesPlayer){
+						mdl.fish.head.lookAt(new THREE.Vector3(cam.position.x, cam.position.y-0.5, cam.position.z));
+						if (mdl.fish.stamina <= 0.0){
+							mdl.fish.lastPlayerPosition.copy(camPos);
+							if (fishPos.distanceTo(camPos) < 1.6){
+								//KILL
+								mdl.fish.alert = false;
+								mdl.fish.noticed = false;
+								mdl.fish.chargeUp = 0.0;
+								mdl.fish.stamina = 0.0;
+								Teleport();
+								rooms.forEach(function (room){
+									room.parent.remove(room);
+								});
+								specialRoomTimer = 12;
+								rooms = [];
+								camPos = new THREE.Vector3(-2, 1, -5.5);
+								cam.position.copy(camPos);
+								startRoom = CreateRoom(0, true);
+								specialObjects[0].position.x = -2.8;
+								specialObjects[1].position.x =  2.8;
+								camRot = [3.14, 0.0, 3.14, 0.0];
+								Generate(startRoom);
+								Generate(startRoom.connected[0].parent);
+								loudness = 0;
+								PlayRandomSound(snd.nex);
+								scene.fog.far = 0;
+								return;
+							}
+						}
+						mdl.fish.coolDown = RandomFRange(8, 10);
+					}
+					else{
+						if ((mdl.fish.coolDown < 6.0) && Math.random() > 0.9){
+							mdl.fish.lastPlayerPosition.copy(new THREE.Vector3(fishT.position.x+RandomFRange(-20,20), 0, fishT.position.z+RandomFRange(-20,20)));
+						}
+					}
+					if (mdl.fish.curSpeed < 0.2)
+						mdl.fish.stuckTimer -= deltaTime;
+					else
+						mdl.fish.stuckTimer = 5.0;
+						
+					if (mdl.fish.stuckTimer < 0.0){
+						let fishVel = new THREE.Vector3();
+						fishT.getWorldDirection(fishVel);
+						fishPos.add(fishVel);
+						mdl.fish.stuckTimer = 5.0;
+					}
+					if ((mdl.fish.coolDown <= 0.0) || (dist > 40)){
+						mdl.fish.coolDown = RandomFRange(4, 6);
+						mdl.fish.noticed = false;
+						mdl.fish.chargeUp = 0.0;
+						mdl.fish.stamina = 0.0;
+						//console.log("FISH: Lost you");
+					}
+					if (mdl.fish.chargeUp > 0.0){
+						mdl.fish.chargeUp -= deltaTime;
+						if (mdl.fish.chargeUp <= 0.0){
+							mdl.fish.lastPlayerPosition.copy(camPos);
+						}
+					}
+					else if (mdl.fish.stamina > 0.0)
+						mdl.fish.stamina -= deltaTime;
+				}
+				else{
+					if (snd.music[2].isPlaying){
+						snd.music[2].setVolume(Lerp(musVol, 0.0, deltaTime*2));
+						if (musVol < 0.01)
+							snd.music[2].stop();
+					}
+					
+					//NOTICING
+					if (dist < 26){
+						if(!mdl.fish.blocked && mdl.fish.seesPlayer){
+							if ((dist > 6) && (Math.random() > 0.95-crouch*0.93) && !mdl.fish.noticed)
+								return;
+							mdl.fish.noticed = true;
+							mdl.fish.chargeUp = 1.0;
+							mdl.fish.stamina = 4.0;
+						}
+					}
+					if (dist > 40){
+						mdl.fish.lastPlayerPosition.copy(camPos);
+					}
+					if (mdl.fish.coolDown <= 0.0){
+						if (mdl.fish.alert){
+							mdl.fish.alert = false;
+							mdl.fish.coolDown = RandomFRange(5, 12)
+							//console.log("FISH: Calm");
+						}
+						else{
+							if (mdl.fish.coolDown <= 0.0){
+								if(mdl.fish.curSpeed < 0.2){
+									if(Math.random() < 0.8){
+										mdl.fish.lastPlayerPosition.copy(new THREE.Vector3(fishT.position.x+RandomFRange(-20,20), 0, fishT.position.z+RandomFRange(-20,20)));
+									}
+									else{
+										mdl.fish.lastPlayerPosition.copy(camPos);
+										mdl.fish.lastPlayerPosition.y = 0;
+									}
+								}
+							}
+						}
+					}
+					//TRANSITION
+					if(mdl.fish.noticed){
+						PlayRandomSound(snd.horror);
+						mdl.fish.stuckTimer = 5.0;
+						mdl.fish.coolDown = RandomFRange(8, 10);
+					}
+					else{
+						//TELEPORTING
+						mdl.fish.stuckTimer -= deltaTime;
+						if (mdl.fish.stuckTimer < 0.0){
+							if (dist > 32){
+								Teleport();
+							}
+						}
+					}
+				}
+				loudness = 0;
+				mdl.fish.coolDown -= deltaTime;
+				mdl.fish.speed = (mdl.fish.stamina > 0.0) ? 16 : (mdl.fish.noticed ? 9 : 5);
+			}
+			
+			function Particles(){
+				if (specialObjects[9]){
+					for (var i=0; i<specialObjects[9].children.length; ++i){
+						var dp = specialObjects[9].children[i];
+						var vel = dp.velocity.clone();
+						vel.multiplyScalar(deltaTime*specialObjects[9].velocity);
+						dp.position.add(vel);
+						dp.velocity.lerp(new THREE.Vector3(0, 0, 0), deltaTime*specialObjects[9].velocity);
+						dp.material.opacity = Lerp(dp.material.opacity, 0.0, deltaTime*specialObjects[9].speed);
+						if (dp.material.opacity < 0.01){
+							specialObjects[9].parent.remove(specialObjects[9]);
+							delete specialObjects[9];
+							break;
+						}
+					}
+				}
+			}
+			
+			//GENERATE AND DEGENERATE ROOMS
+			function Degenerate(room){
+				for (var j=0; j<room.connected.length; ++j){
+					if (room.connected[j]){
+						room.connected[j].position.y = 0;
+						let _room = room.connected[j].parent;
+						for (var k=0; k<_room.doorWays.length; ++k){
+							if (Math.round(_room.doorWays[k].position.y) == 0){
+								_room.generated[k] = false;
+							}
+						}
+						_room.canGenerate = true;
+					}
+				}
+				if(room.specialNum > 0){
+					specialActive[room.specialNum] = false;
+					//console.log("ROOM: Depawned special room", room.specialNum);
+				}
+				worldColliders.remove(room);
+				let _roomID = room.roomID;
+				delete rooms[_roomID];
+				rooms.splice(_roomID, 1);
+				UpdateRoomIDs();
+			}
+			function Generate(room){
+				generateLoop:
+					for (var j=0; j<room.doorWays.length; ++j){
+						if ((!room.generated[j])){
+							let overlap = null;
+							//CHECK OVERLAPS
+							let door = room.doorWays[j];
+							let doorFwd = new THREE.Vector3();
+							door.getWorldDirection(doorFwd);
+							doorFwd.round();
+							let doorMagnitude = Math.abs(door.position.length());
+							doorFwd.multiplyScalar(doorMagnitude);
+							let origin = new THREE.Vector3();
+							door.getWorldPosition(origin);
+								/*let arrowHelper = new THREE.ArrowHelper(doorFwd, new THREE.Vector3().subVectors(origin, THREE.Object3D.DefaultUp), doorMagnitude);
+								scene.add(arrowHelper);*/
+							origin.sub(doorFwd);
+							let hit = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0), 0, 8).intersectObjects(rooms);
+							if (hit.length > 0){
+								//console.log("ROOM: Overlap found, blocking path.");
+								overlap = hit[0];
+							}
+							if (!overlap){
+								let decision = 0;
+								if (Math.random() > 0.8)	//ROOM VARIATION CHANCE
+									decision = RandomRange(1, mdl.room.length-1);
+								//SPAWNING ROOM
+								let spec = false;//SPECIAL ROOMS
+								let specRoomExists = false;
+								for (var k=0; k<specialActive.length; ++k)
+									if (specialActive[k]){
+										//console.log("SPECIAL:",k);
+										specRoomExists = true;
+										break;
+									}
+								if((scene.fog.far>32) && (specialRoomTimer < 0) && !specRoomExists){
+									decision = 0;
+									while(decision == 0){
+										if ((Math.random() > 0.6) && (state > 3)){
+											decision = 4;
+										}
+										else if ((Math.random() > 0.6) && (state != 5)){
+											decision = (state < 6) ? 2 : 3;
+										}
+										else if (Math.random() > 0.6){
+											decision = 1;
+										}
+									}
+									spec = true;
+								}
+								if(spec){
+									//console.log("ROOM: Spawned special room", decision);
+									specialActive[decision] = true;
+								}
+								decision = CreateRoom(decision, spec);
+								let doorWayNumber = RandomRange(0, decision.doorWays.length-1);
+								let doorWay = decision.doorWays[doorWayNumber];
+									let roomDoorRot = new THREE.Quaternion();
+									let decisionDoorRot = new THREE.Quaternion();
+									door.getWorldQuaternion(roomDoorRot);
+									doorWay.getWorldQuaternion(decisionDoorRot);
+								roomDoorRot.multiply(decisionDoorRot);
+								decision.quaternion.copy(roomDoorRot);
+								doorFwd.multiplyScalar(2);
+								decision.position.copy(room.position);
+								decision.position.sub(doorFwd);
+									let roomDoorPos = new THREE.Vector3();
+									let decisionDoorPos = new THREE.Vector3();
+									door.getWorldPosition(roomDoorPos);
+									doorWay.getWorldPosition(decisionDoorPos);
+									let doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
+									for (var k=0; doorDist > 1; ++k){	//BEHOLD, THE MOST UNORTHODOX WAY TO CHECK THE CORRECT ROTATION
+										//console.log("ROOM: THREE.js is actin up again");
+										decision.rotateY(90*d2r);
+										door.getWorldPosition(roomDoorPos);
+										doorWay.getWorldPosition(decisionDoorPos);
+										doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
+										if(k > 4){	//PREVENT RECURSION FOR WHATEVER REASON
+											Degenerate(decision);
+											//console.log("ROOM: No room for you then");
+											continue generateLoop;
+										}
+									}
+									
+								//RANDOM PROPS
+								if ((Math.random() > 0.6) && !spec){
+									let arch = mdl.arch[RandomRange(0, mdl.arch.length-1)].clone();
+									arch.position.copy(doorWay.position);
+									arch.quaternion.copy(doorWay.quaternion);
+									if (Math.random() > 0.5)
+										arch.quaternion.conjugate();
+									decision.add(arch);
+								}
+								
+								//DISABLING DOORWAY
+								decision.generated[doorWayNumber] = true;
+								door.position.y = -8;
+								doorWay.position.y= -8;
+								room.connected[j] = doorWay;
+								decision.connected[doorWayNumber] = door;
+							}
+						}
+						room.generated[j] = true;
+					}
+					room.canGenerate = false;
+			}
+			function RoomGenerator(){
+				for (var i=0; i<rooms.length; ++i){
+					const dist = rooms[i].position.distanceTo(cam.position);
+					if (dist < 40){
+						if(Actions.Blink && (scene.fog.far<8)){
+							if(dist > 8){
+								if(Math.random() > 0.95){
+									Degenerate(rooms[i]);
+									continue;
+								}
+							}
+						}
+						else if (rooms[i].canGenerate){
+							let dir = rooms[i].position.clone();
+							dir.sub(cam.position).normalize();
+							let rayInt = new THREE.Raycaster(cam.position, dir, 0, dist).intersectObjects(rooms);
+							if (rayInt.length == 0){
+								//GENERATE
+								Generate(rooms[i]);
+							}
+						}
+						if (dist < 12 && !rooms[i].discovered){
+							rooms[i].discovered = true;
+							specialRoomTimer--;
+							if (rooms[i].specialNum > 0)
+								specialRoomTimer = RandomRange(2, 8);
+						}
+						//SPECIAL PROGRESS
+						switch(rooms[i].specialNum){
+							case 1:
+								var planksPos = new THREE.Vector3();
+								planksRObject.getWorldPosition(planksPos);
+								var distToPlanks = planksPos.distanceToSquared(camPos);
+								if (state < 9){
+									if(distToPlanks < 6){
+										showHand = true;
+										planksRObject.shownHand = true;
+										if(Actions.Interact){
+											if(snd.doorBudge.isPlaying)
+												snd.doorBudge.stop();
+											snd.doorBudge.play();
+											mdl.doorRigged.actions[0].stop();
+											mdl.doorRigged.actions[0].play();
+										}
+									}
+									else if (planksRObject.shownHand){
+										showHand = false;
+										planksRObject.shownHand = false;
+									}
+								}
+								if (state == 9){
+									if(planksRObject.coolDown < 0.0){
+										if(distToPlanks < 6){
+											showCrowbar = true;
+											planksRObject.shownHand = true;
+											if(Actions.Interact){
+												planksRObject.coolDown = 1.0;
+												if(planksRObject.plank < 5){
+													CameraShake(8);
+													++planksRObject.plank;
+													/*var pl = planksRObject.children[planksRObject.plank].children[0];
+													//console.log(pl);
+													pl.children[0].material = pl.children[0].material.clone();
+													pl.children[1].material = pl.children[1].material.clone();
+													pl.children[0].material.alphaMap = tex.dust3;
+													pl.children[1].material.alphaMap = tex.dust3;
+													pl.children[0].material.depthWrite = false;
+													pl.children[1].material.depthWrite = false;*/
+													mdl.planksR[planksRObject.plank].anim.play();
+													PlayRandomSound(snd.wood);
+													ParticleDust(planksPos, 2, 1, 5, 0.2, 1);
+													//console.log(specialObjects[9]);
+												}
+												//specialObjects[8].children[specialObjects[8].plank].visible = false;
+												showCrowbar = false;
+												if(planksRObject.plank == 5){
+													CameraShake(8);
+													state = 10;
+													//mdl.doorRigged.offs = -1.5;
+													SetTimeout(function (){
+														planksRObject.parent.remove(planksRObject);
+														mdl.doorRigged.actions[0].stop();
+														mdl.doorRigged.actions[1].play();
+													}, 200);
+												}
+											}
+										}
+										else if (planksRObject.shownHand){
+											showCrowbar = false;
+											planksRObject.shownHand = false;
+										}
+									}
+									else
+										planksRObject.coolDown -= deltaTime;
+									
+									/*if((planksRObject.plank >= 0) && (planksRObject.plank <= 5)){
+										var pln = planksRObject.children[planksRObject.plank].children[0];
+										pln.children[0].material.alphaTest = Lerp(pln.children[0].material.alphaTest, 1.0, deltaTime*2);
+										pln.children[1].material.alphaTest = pln.children[0].material.alphaTest;
+										//pln.position.z = Lerp(pln.position.z, -4, deltaTime);
+									}*/
+								}
+								
+								mdl.doorRigged.mixer.update(deltaTime);
+								for (var j=0; j<mdl.planksR.length; ++j){
+									mdl.planksR[j].mixer.update(deltaTime);
+								}
+								break;
+							case 2:
+								if ((state == 3) && rooms[i].discovered){
+									snd.powerDown.play();
+									state = 4;
+								}
+								break;
+							case 3:
+								if (state == 6){
+									var keyPos = new THREE.Vector3();
+										specialObjects[4].getWorldPosition(keyPos);
+									var distToKey = keyPos.distanceToSquared(camPos);
+									if(distToKey < 2){
+										showHand = true;
+										specialObjects[4].shownHand = true;
+										if(Actions.Interact){
+											state = 7;
+											specialObjects[4].parent.remove(specialObjects[4]);
+											showHand = false;
+											snd.keys.play();
+										}
+									}
+									else if (specialObjects[4].shownHand){
+										showHand = false;
+										specialObjects[4].shownHand = false;
+									}
+								}
+								break;
+							case 4:
+								var crowbarPos = new THREE.Vector3(), lockerPos = new THREE.Vector3(), switchPos = new THREE.Vector3();
+									specialObjects[5].getWorldPosition(lockerPos);
+									specialObjects[6].getWorldPosition(switchPos);
+								if(state == 8 && !snd.lockerOpen.isPlaying){
+									specialObjects[7].getWorldPosition(crowbarPos);
+									var distToCrowbar = crowbarPos.distanceToSquared(camPos);
+									if(distToCrowbar < 8){
+										showHand = true;
+										specialObjects[7].shownHand = true;
+										if(Actions.Interact){
+											showHand = false;
+											specialObjects[7].parent.remove(specialObjects[7]);
+											snd.crowbar.play();
+											state = 9;
+										}
+									}
+									else if (specialObjects[7].shownHand){
+										showHand = false;
+										specialObjects[7].shownHand = false;
+									}
+								}
+								
+								var distToLocker = lockerPos.distanceToSquared(camPos);
+								if(distToLocker < 2 && !snd.lockerOpen.isPlaying && state < 8){
+									showKey = true;
+									specialObjects[5].shownHand = true;
+									if(Actions.Interact){
+										if(state == 7){
+											showKey = false;
+											snd.lockerOpen.play();
+											SetTimeout(function(){state = 8;}, 200);
+										}
+										else{
+											if(snd.lockerBudge.isPlaying)
+												snd.lockerBudge.stop();
+											snd.lockerBudge.play();
+										}
+									}
+								}
+								else if (specialObjects[5].shownHand){
+									showKey = false;
+									specialObjects[5].shownHand = false;
+								}
+								specialObjects[5].rotation.y = (state > 7) ? LerpAngle(specialObjects[5].rotation.y, 1.57, deltaTime*2) : 0;
+								
+								var distToSwitch = switchPos.distanceToSquared(camPos);
+								if(distToSwitch < 1.5 && state == 4){
+									showHand = true;
+									specialObjects[6].shownHand = true;
+									if(Actions.Drag){
+										specialObjects[6].switchRot[0] = Clamp(specialObjects[6].switchRot[0]-Actions.LookVertical*0.3*Sensitivity, 0, Math.PI);
+										if (specialObjects[6].switchRot[0] < 1.57){
+											specialObjects[6].switchRot[0] = 0.0;
+											state = 5;
+											snd.powerUp.play();
+											specialRoomTimer = 32;
+											SetTimeout(function(){
+												AddFish();
+												state = 6;
+											}, 23000);
+										}
+									}
+									else{
+										specialObjects[6].switchRot[0] = 3.14;
+									}
+								}
+								else if (specialObjects[6].shownHand){
+									showHand = false;
+									specialObjects[6].shownHand = false;
+								}
+								specialObjects[6].switchRot[1] = Lerp(specialObjects[6].switchRot[1], specialObjects[6].switchRot[0], deltaTime*8);
+								specialObjects[6].rotation.x = specialObjects[6].switchRot[1];
+								break;
+						}
+					}
+					if (dist > 46){
+						//4CHAN USER
+						Degenerate(rooms[i]);
+					}
+				}
+			}
+			function TestCollision(pos, vel, size, dbl = false, err){
+				//BOX2 COLLISION
+				/*worldColliders.forEach(function(obj){
+					obj.colliders.forEach(function(col){
+						if((vel.x == 0) && (vel.z == 0))
+							return vel;
+						if (new THREE.Box2(new THREE.Vector2(pos.x+vel.x-size, pos.z-size), new THREE.Vector2(pos.x+vel.x+size, pos.z+size)).intersectsBox(col)){
+							vel.x = 0;
+						}
+						if (new THREE.Box2(new THREE.Vector2(pos.x-size, pos.z+vel.z-size), new THREE.Vector2(pos.x+size, pos.z+vel.z+size)).intersectsBox(col)){
+							vel.z = 0;
+						}
+					});
+				});*/
+				//4D ARRAY COLLISION
+				/*worldColliders.forEach(function(obj){
+					obj.colliders.forEach(function(col){
+						if((vel.x == 0) && (vel.z == 0))
+							return vel;
+						if ((pos.x+vel.x > col[0] && pos.x+vel.x < col[2]) && (pos.z > col[1] && pos.z < col[3])){
+							vel.x = 0;
+						}
+						if ((pos.x > col[0] && pos.x < col[2]) && (pos.z+vel.z > col[1] && pos.z+vel.z < col[3])){
+							vel.z = 0;
+						}
+					});
+				});*/
+				//RAYCAST COLLISION
+				if((vel.x == 0) && (vel.z == 0))
+					return vel;
+				let rayIntX, rayIntZ;
+				if(err != null){
+					rayIntX = (new THREE.Raycaster(pos, new THREE.Vector3(vel.x, 0, -err*vel.z).normalize(), 0, size).intersectObjects(worldColliders.children).length > 0);
+					rayIntZ = (new THREE.Raycaster(pos, new THREE.Vector3(-err*vel.x, 0, vel.z).normalize(), 0, size).intersectObjects(worldColliders.children).length > 0);
+				}
+				else{
+					rayIntX = (new THREE.Raycaster(pos, new THREE.Vector3(vel.x, 0, 0).normalize(), 0, size).intersectObjects(worldColliders.children).length > 0);
+					rayIntZ = (new THREE.Raycaster(pos, new THREE.Vector3(0, 0, vel.z).normalize(), 0, size).intersectObjects(worldColliders.children).length > 0);
+				}
+				
+				if (rayIntX)
+					vel.x = 0;
+				if (rayIntZ)
+					vel.z = 0;
+				if (!rayIntX && !rayIntZ){
+					let rayInt = (new THREE.Raycaster(pos, new THREE.Vector3(vel.x, 0, vel.z).normalize(), 0, size).intersectObjects(worldColliders.children).length > 0);
+					if (rayInt){
+						vel.negate();
+					}
+				}
+				//RAYCAST INVERTED COLLISION
+				if (dbl){
+					let posInv = pos.clone();
+					posInv.add(vel);
+					rayIntX = (new THREE.Raycaster(posInv, new THREE.Vector3(-vel.x, 0, 0).normalize(), 0, size).intersectObjects(worldColliders.children).length > 0);
+					rayIntZ = (new THREE.Raycaster(posInv, new THREE.Vector3(0, 0, -vel.z).normalize(), 0, size).intersectObjects(worldColliders.children).length > 0);
+					if (rayIntX)
+						vel.x = 0;
+					if (rayIntZ)
+						vel.z = 0;
+					if (!rayIntX && !rayIntZ){
+						let rayInt = (new THREE.Raycaster(posInv, new THREE.Vector3(-vel.x, 0, -vel.z).normalize(), 0, size).intersectObjects(worldColliders.children).length > 0);
+						if (rayInt){
+							vel.negate();
+						}
+					}
+				}
+					
+				//FULL RAYCAST COLLISION
+				/*if((vel.x == 0) && (vel.z == 0))
+					return vel;
+				let rayInt = new THREE.Raycaster(pos, new THREE.Vector3(vel.x, 0, vel.z).normalize(), 0, size).intersectObjects(worldColliders);
+				if (rayInt.length > 0)
+					vel.set(0, 0, 0);*/
+					
+				return vel;
+			}
+			function CameraShake(amount){
+				if((amount != 0) && (deltaTime != 0)){
+					camRotOffset[2] = RandomFRange(-amount, amount);
+					camRotOffset[3] = RandomFRange(-amount, amount);
+				}
+			}
+			function GamepadActions(){
+				//GAMEPAD ACTIONS
+				gamepads = navigator.getGamepads();
+				for(var i=0; i<gamepads.length; ++i){
+					if(gamepads[i] && gamepadsPrev[i]){
+						if(gamepads[i].axes[1] != gamepadsPrev[i].axes[1])
+							Actions.Vertical = DeadZone(-gamepads[i].axes[1]);
+						if(gamepads[i].axes[0] != gamepadsPrev[i].axes[0])
+							Actions.Horizontal = DeadZone(-gamepads[i].axes[0]);
+						if(DeadZone(gamepads[i].axes[3]) != 0){
+							Actions.LookVertical = DeadZone(-gamepads[i].axes[3])*Sensitivity*50;
+							mousePos[1] = Clamp(mousePos[1]-Actions.LookVertical*0.2, 0, window.innerHeight);
+							gamepadMouse = true;
+							document.body.requestPointerLock();
+						}
+						if(DeadZone(gamepads[i].axes[2]) != 0){
+							Actions.LookHorizontal = DeadZone(-gamepads[i].axes[2])*Sensitivity*50;
+							mousePos[0] = Clamp(mousePos[0]-Actions.LookHorizontal*0.2, 0, window.innerWidth);
+							gamepadMouse = true;
+							document.body.requestPointerLock();
+						}
+						if(gamepads[i].buttons[4].pressed != gamepadsPrev[i].buttons[4].pressed)
+							Actions.Run = gamepads[i].buttons[4].pressed;
+						if(gamepads[i].buttons[5].pressed != gamepadsPrev[i].buttons[5].pressed)
+							Actions.Crouch = gamepads[i].buttons[5].pressed;
+						if((gamepads[i].buttons[6].value != gamepadsPrev[i].buttons[6].value) || (gamepads[i].buttons[7].value != gamepadsPrev[i].buttons[7].value))
+							Actions.Tilt = gamepads[i].buttons[6].value - gamepads[i].buttons[7].value;
+						if(gamepads[i].buttons[0].pressed != gamepadsPrev[i].buttons[0].pressed){
+							Actions.Drag = gamepads[i].buttons[0].pressed;
+							Actions.Interact = gamepads[i].buttons[0].pressed;
+						}
+						if(gamepads[i].buttons[11].pressed != gamepadsPrev[i].buttons[11].pressed){
+							Actions.Drag = gamepads[i].buttons[11].pressed;
+							Actions.Interact = gamepads[i].buttons[11].pressed;
+						}
+						if(gamepads[i].buttons[2].pressed != gamepadsPrev[i].buttons[2].pressed)
+							Actions.Blink = gamepads[i].buttons[2].pressed;
+						if((gamepads[i].buttons[9].pressed != gamepadsPrev[i].buttons[9].pressed) && gamepads[i].buttons[9].pressed)
+							ToggleMenu();
+					}
+				}
+				gamepadsPrev = navigator.getGamepads();
+			}
+			function Controls(){
+				camRot[0] += Actions.LookHorizontal*d2r*Sensitivity;
+				camRot[1] += Actions.LookVertical*d2r*Sensitivity;
+				camRot[1] = Clamp(camRot[1], -70*d2r, 70*d2r);
+				
+				camTilt[0] = Actions.Tilt*0.2;
+				camTilt[1] = Lerp(camTilt[1], camTilt[0], deltaTime*6);
+				var speed = deltaTime;
+				var chosenSpeed = (Actions.Run && (stamina > 0.8) && !Actions.Crouch) ? runSpeed : walkSpeed;
+				speed *= chosenSpeed-crouch*2;
+				
+					cam.getWorldDirection(camFwd);
+					rotFwd = [-Math.sin(camRot[2]), -Math.cos(camRot[2])];
+					velocity.set(
+						(rotFwd[0]*speed*Actions.Vertical)+(rotFwd[1]*speed*Actions.Horizontal),
+						0,
+						(rotFwd[1]*speed*Actions.Vertical)-(rotFwd[0]*speed*Actions.Horizontal));
+					velocity.clampLength(0, speed);
+					velocity.copy(TestCollision(camPos, velocity, 0.5));
+					camPos.add(velocity);
+					camPos.y = 1-crouch;
+				var curSpeed = velocity.length();
+				if (Actions.Run && curSpeed > 0)
+					stamina = Clamp(stamina-curSpeed*0.1, 0.0, 10.0);
+				else
+					stamina = Clamp(stamina+deltaTime*2-curSpeed*0.1, 0.0, 10.0);
+					
+				if(Actions.Vertical != 0.0 || Actions.Horizontal != 0.0){
+					fov = Lerp(fov, 50+chosenSpeed+stamina*0.5, deltaTime*3);
+					walkAnim[0]+=curSpeed*sideRight*0.6;
+					walkAnim[1]+=curSpeed*sideUp*0.6;
+					walkAnim[0]=Clamp(walkAnim[0], -0.8, 0.8);
+					walkAnim[1]=Clamp(walkAnim[1], -0.4, 0.4);
+					if (Math.abs(walkAnim[0]) >= 0.8){
+						sideRight = -sideRight;
+						loudness = chosenSpeed*0.08-crouch*0.3;
+						PlayRandomSound(snd.step, loudness);
+					}
+					if (Math.abs(walkAnim[1]) >= 0.4){sideUp = -sideUp;}
+				}
+				else{
+					fov = Lerp(fov, 50+stamina*0.5, deltaTime*3);
+				}
+				crouch = Lerp(crouch, Actions.Crouch ? 1 : 0, deltaTime*8);
+				
+				if(Actions.Menu)	//PAUSING
+					ToggleMenu();
+			}
+			function State(){
+				stateLerp[1] = Lerp(stateLerp[1], stateLerp[0], deltaTime * stateLerp[2]);
+				//[TARGET, LERP, DELTA]
+				switch(state){
+					case -1://GAME START
+						setTimeout(function(){
+							if(state == -1)
+								state = 0;
+						}, 100);
+						break;
+					case 0:	//ARRIVAL, SET ELEVATOR
+						snd.gunshot.play();
+						//console.log("STATE: 0 (arrival)");
+						snd.elevator.play();
+						stateLerp = [0.1, 0.0, 1.0];
+						state = 1;
+						setTimeout(function (){
+							canControl = true;
+						}, 200);
+						SetTimeout(function (){
+							stateLerp[0] = 2.0;
+							SetTimeout(function (){
+								stateLerp[0] = 0.0;
+								stateLerp[1] = 0.0;
+								SetTimeout(function (){
+									snd.elevatorOpen.play();
+									state = 2;
+								}, 2500);
+							}, 1500);
+						}, 12000);
+						break;
+					case 1:	//ELEVATOR RIDE
+						CameraShake(stateLerp[1]);
+						if(stateLerp[1] > 0.0)
+							specialObjects[2].position.y += deltaTime*4;
+						if((stateLerp[1] < 1.0) && (specialObjects[2].position.y > 6))
+							specialObjects[2].position.y = -6;
+						break;
+					case 2:	//OPEN ELEVATOR DOORS, SHOW LOGO
+						if(specialObjects[0].position.x > -2.8){
+							specialObjects[0].position.x -= deltaTime*0.35;
+							specialObjects[1].position.x += deltaTime*0.35;
+						}
+						else{
+							canBlink = true;
+							snd.breathing.loop = true;
+							snd.breathing.setVolume(0.0);
+							snd.breathing.play();
+							SetTimeout(function (){
+								ui.showLogo = true;
+								SetTimeout(function (){
+									ui.showLogo = false;
+								}, 3000);
+							}, 2000);
+							snd.music[1].play();
+							state = 3;
+						}
+						break;
+					case 3:	//DIDN'T DISCOVER ELEVATORS ROOM YET
+						break;
+					case 4:	//DISCOVERED ELEVATOR ROOM, DIDN'T FLIP THE SWITCH
+						rend.toneMappingExposure = Lerp(rend.toneMappingExposure, 1.1, deltaTime);
+						break;
+					case 5:	//FLIPPED THE SWITCH
+						rend.toneMappingExposure = Lerp(rend.toneMappingExposure, 1.3, deltaTime);
+						break;
+					case 6:	//FISH IS OUT
+						break;
+					case 7:	//GOT THE KEY
+						break;
+					case 8:	//OPENED LOCKER
+						break;
+					case 9:	//GOT THE CROWBAR
+						break;
+					case 10://EXITING
+						canBlink = false;
+						canControl = false;
+						scene.remove(cam);
+						scene.remove(light);
+						let needRoom;
+						let roomsToDegenerate = [];
+						rooms.forEach(function(room){
+							if (room.specialNum === 1){
+								needRoom = room;
+								//console.log(needRoom);
+								room.attach(cam);
+								room.attach(light);
+								room.add(mdl.entrance);
+								room.quaternion.identity();
+								camPos.set(0, 1, 0);
+								camTilt = [0.0, 0.0];
+							}
+							else{
+								roomsToDegenerate.push(room);
+							}
+						});
+						roomsToDegenerate.forEach(function(room){Degenerate(room)});
+						fishActive = false;
+						if (snd.music[2].isPlaying)
+							snd.music[2].stop();
+						scene.remove(mdl.fish.scene);
+						snd.monster.stop();
+						snd.music[3].play();
+						state = 11;
+						SetTimeout(function(){
+							state = 12;
+							scene.fog.far = 0;
+							snd.ambience.stop();
+							SetTimeout(function(){
+								ui.showLogo = true;
+							}, 16700);
+						}, 7800);
+						break;
+					case 11://LERPING DOOR
+						//FUCK FUKC FUKC FUCK FUCK NOTHING FUCKING MAKES SENSE AND I CAN'T EVEN FUCKING TEST IT ALL PROPERLY
+						//THREE.JS IS A FUCKING PIECE OF SHIT AND NO SANE SELF-LOVING PERSON SHOULD BE WORKING WITH IT
+						//FUCK FUCK FUCK
+						/*var doorWorld = new THREE.Quaternion();							//FUCK
+						mdl.doorRigged.scene.getWorldQuaternion(doorWorld);				//FUCK
+						doorWorld.conjugate();											//FUCK
+						var doorWorldEuler = new THREE.Euler();							//FUCK
+						doorWorldEuler.setFromQuaternion(doorWorld);					//FUCK
+						camRot[0] = LerpAngle(camRot[0], doorWorldEuler.y, deltaTime);	//FUCK
+						camRot[1] = LerpAngle(camRot[1], 0.0, deltaTime*2);				//FUCK
+						var rotFwd = [-Math.sin(camRot[2]), -Math.cos(camRot[2])];		//FUCK
+						var doorWorldPos = new THREE.Vector3();							//FUCK
+						mdl.doorRigged.scene.getWorldPosition(doorWorldPos);			//FUCK
+						camPos.set(doorWorldPos.x+mdl.doorRigged.offs*rotFwd[0]-rotFwd[1], camPos.y, doorWorldPos.z+mdl.doorRigged.offs*rotFwd[1]-rotFwd[0]);
+						mdl.doorRigged.offs += deltaTime*0.2;*/
+						//cam.quaternion.slerp(mdl.doorRigged.scene.quaternion, deltaTime);
+						//cam.position.lerp(new THREE.Vector3(0, 0, 0), deltaTime*2);
+						
+						/*camRot[0] = LerpAngle(camRot[0], 0.0, deltaTime);
+						camRot[1] = LerpAngle(camRot[1], 0.0, deltaTime);*/
+						cam.quaternion.slerp(new THREE.Quaternion(0, 0, 0, 1), deltaTime);
+						camPos.z -= deltaTime*0.5;
+						
+						fov += deltaTime*0.2;
+						
+						scene.fog.far = Lerp(scene.fog.far, 96.0, deltaTime*0.5);
+						rend.toneMappingExposure = Lerp(rend.toneMappingExposure, 1.6, deltaTime*0.5);
+						break;
+				}
+			}
+			function UI(){
+				let width = uiCanvas.width, height = uiCanvas.height, halfWidth = uiCanvas.width * 0.5, halfHeight = uiCanvas.height * 0.5;
+				ui.clearRect(0, 0, width, height);
+				
+				ui.globalAlpha = 0.5+Math.abs(stamina-10)*0.05;
+				ui.drawImage(img.vignette, 0, 0, width, height);
+				ui.globalAlpha = 1.0;
+				
+				if(ui.showLogo){
+					var hRatio = width / img.logo.width;
+					var vRatio = height / img.logo.height;
+					var ratio  = Math.min(hRatio, vRatio);
+					var centerShiftX = (width - img.logo.width*ratio) * 0.5;
+					var centerShiftY = (height - img.logo.height*ratio) * 0.5;
+					ui.drawImage(img.logo, centerShiftX, centerShiftY, img.logo.width*ratio, img.logo.height*ratio);
+				}
+				if(!Release){
+					ui.textAlign = "left";
+					ui.drawStroked(stamina.toString(), 0, 96);
+				}
+				if(showCrowbar)
+					ui.drawImage(img.iconCrowbar, width-96, height-96);
+				if(showHand)
+					ui.drawImage(img.iconHand, width-96, height-96);
+				if(showKey)
+					ui.drawImage(img.iconKey, width-96, height-96);
+				if(paused){
+					let pauseW = img.pauseMenu.width*0.5, pauseH = img.pauseMenu.height*0.5;
+					var hRatioP = img.pauseMenu.width / img.logo.width;
+					var vRatioP = img.pauseMenu.height / img.logo.height;
+					var ratioP	= Math.min(hRatioP, vRatioP);
+					ui.drawImage(img.logo, halfWidth-pauseW, halfHeight-pauseH-img.logo.height*ratioP+48, img.logo.width*ratioP, img.logo.height*ratioP);
+					
+					ui.drawImage(img.pauseMenu, halfWidth-pauseW, halfHeight-pauseH+60);
+					ui.textAlign = "center";
+					//ui.drawStroked("PAUSED", halfWidth, halfHeight-156);
+					
+					ui.fillStyle = "black";
+					
+					let buttonX = halfWidth-pauseW+33;
+					let buttonOn;
+						buttonOn = MouseInRange(buttonX, halfHeight-180, buttonX+446, halfHeight-132);
+						ui.globalAlpha = buttonOn ? 0.8 : 1.0;
+						ui.drawImage(img.button, buttonX, halfHeight-180);
+						ui.fillText("RESUME", halfWidth, halfHeight-148);
+						if(buttonOn && Actions.Interact)
+							ToggleMenu();
+					ui.globalAlpha = 1.0;
+					ui.textAlign = "left";
+					ui.drawStroked("BLOOM:", buttonX+24, halfHeight-100);
+						buttonOn = MouseInRange(buttonX, halfHeight-132, buttonX+446, halfHeight-84);
+						ui.globalAlpha = buttonOn ? 0.8 : 1.0;
+						ui.drawImage(img.checkBox, buttonX+358, halfHeight-132);
+						if(Graphics.Bloom)
+							ui.drawImage(img.check, buttonX+358, halfHeight-132);
+						if(buttonOn && Actions.Interact){
+							Graphics.Bloom = !Graphics.Bloom;
+							SetCookie("Graphics.Bloom", Graphics.Bloom, 365);
+							if (Graphics.Bloom)
+								composer.insertPass(bloomPass, 3);
+							else
+								composer.removePass(bloomPass);
+						}
+					ui.globalAlpha = 1.0;
+					ui.drawStroked("FXAA:", buttonX+24, halfHeight-52);
+						buttonOn = MouseInRange(buttonX, halfHeight-84, buttonX+446, halfHeight-36);
+						ui.globalAlpha = buttonOn ? 0.8 : 1.0;
+						ui.drawImage(img.checkBox, buttonX+358, halfHeight-84);
+						if(Graphics.FXAA)
+							ui.drawImage(img.check, buttonX+358, halfHeight-84);
+						if(buttonOn && Actions.Interact){
+							Graphics.FXAA = !Graphics.FXAA;
+							SetCookie("Graphics.FXAA", Graphics.FXAA, 365);
+							if (Graphics.FXAA)
+								composer.insertPass(fxaaPass, 1);
+							else
+								composer.removePass(fxaaPass);
+						}
+					ui.globalAlpha = 1.0;
+					ui.drawStroked("MOTION BLUR:", buttonX+24, halfHeight-4);
+						buttonOn = MouseInRange(buttonX, halfHeight-36, buttonX+446, halfHeight+12);
+						ui.globalAlpha = buttonOn ? 0.8 : 1.0;
+						ui.drawImage(img.checkBox, buttonX+358, halfHeight-36);
+						if(Graphics.MotionBlur)
+							ui.drawImage(img.check, buttonX+358, halfHeight-36);
+						if(buttonOn && Actions.Interact){
+							Graphics.MotionBlur = !Graphics.MotionBlur;
+							SetCookie("Graphics.MotionBlur", Graphics.MotionBlur, 365);
+							if (Graphics.MotionBlur)
+								composer.insertPass(afterimagePass, 4);
+							else
+								composer.removePass(afterimagePass);
+						}
+					ui.globalAlpha = 1.0;
+					ui.drawStroked("SAO:", buttonX+24, halfHeight+44);
+						buttonOn = MouseInRange(buttonX, halfHeight+12, buttonX+446, halfHeight+60);
+						ui.globalAlpha = buttonOn ? 0.8 : 1.0;
+						ui.drawImage(img.checkBox, buttonX+358, halfHeight+12);
+						if(Graphics.SAO)
+							ui.drawImage(img.check, buttonX+358, halfHeight+12);
+						if(buttonOn && Actions.Interact){
+							Graphics.SAO = !Graphics.SAO;
+							SetCookie("Graphics.SAO", Graphics.SAO, 365);
+							if (Graphics.SAO)
+								composer.insertPass(saoPass, 2);
+							else
+								composer.removePass(saoPass);
+						}
+					ui.globalAlpha = 1.0;
+					ui.drawStroked("MATERIALS:", buttonX+24, halfHeight+92);
+						buttonOn = MouseInRange(buttonX, halfHeight+60, buttonX+446, halfHeight+108);
+						ui.globalAlpha = buttonOn ? 0.8 : 1.0;
+						ui.drawImage(img.checkBox, buttonX+358, halfHeight+60);
+						if(Graphics.Materials)
+							ui.drawImage(img.check, buttonX+358, halfHeight+60);
+						if(buttonOn && Actions.Interact){
+							Graphics.Materials = !Graphics.Materials;
+							SetCookie("Graphics.Materials", Graphics.Materials, 365);
+							window.alert("You need to refresh the page for this to take effect.");
+						}
+					ui.globalAlpha = 1.0;
+					ui.drawStroked("SENSITIVITY:", buttonX+24, halfHeight+188);
+						buttonOn = MouseInRange(buttonX, halfHeight+156, buttonX+446, halfHeight+204);
+						ui.globalAlpha = buttonOn ? 0.8 : 1.0;
+						ui.fillStyle = "black";
+						ui.fillRect(buttonX+262, halfHeight+180, 128, 8);
+						ui.save();
+						ui.font = "16px gameFont";
+						ui.drawStroked(Sensitivity.toFixed(2).toString(), buttonX+400, halfHeight+188);
+						ui.restore();
+						
+						ui.drawImage(img.check, buttonX+218+Sensitivity*32, halfHeight+160);
+						if(buttonOn && Actions.Drag){
+							Sensitivity = Clamp((mousePos[0]-halfWidth-48)*0.031, 0.01, 4);
+							SetCookie("Sensitivity", Sensitivity, 365);
+						}
+							
+					ui.globalAlpha = 1.0;
+					ui.drawStroked("VOLUME:", buttonX+24, halfHeight+236);
+						buttonOn = MouseInRange(buttonX, halfHeight+204, buttonX+446, halfHeight+252);
+						ui.globalAlpha = buttonOn ? 0.8 : 1.0;
+						ui.fillStyle = "black";
+						ui.fillRect(buttonX+262, halfHeight+228, 128, 8);
+						ui.save();
+						ui.font = "16px gameFont";
+						ui.drawStroked(Volume.toFixed(2).toString(), buttonX+400, halfHeight+236);
+						ui.restore();
+						
+						ui.drawImage(img.check, buttonX+218+Volume*64, halfHeight+208);
+						if(buttonOn && Actions.Drag){
+							Volume = Clamp((mousePos[0]-halfWidth-48)*0.015, 0, 2);
+							listener.setMasterVolume(Volume);
+							SetCookie("Volume", Volume, 365);
+						}
+							
+						
+					ui.textAlign = "center";
+					ui.fillStyle = "black";
+						buttonOn = MouseInRange(buttonX, halfHeight+252, buttonX+446, halfHeight+300);
+						ui.globalAlpha = buttonOn ? 0.8 : 1.0;
+						ui.drawImage(img.button, buttonX, halfHeight+252);
+						ui.fillText("EXIT", halfWidth, halfHeight+284);
+						if(buttonOn && Actions.Interact)
+							window.close();
+					ui.globalAlpha = 1.0;
+					
+					if (gamepadMouse)
+						ui.drawImage(img.check, mousePos[0]-44, mousePos[1]-24);
+				}
+			}
+			function MouseInRange(x1, y1, x2, y2){
+				if((mousePos[0] > x1) && (mousePos[0] < x2) && (mousePos[1] > y1) && (mousePos[1] < y2))
+					return true;
+				return false;
+			}
+			function ToggleMenu(){
+				paused = !paused;
+				camRot[0] = camRot[2];
+				camRot[1] = camRot[3];
+				if (!paused){
+					//document.body.requestPointerLock();
+				}
+				timeScale = paused ? 0 : 1;
+				function PauseUnpause(_sound){
+					if (paused){
+						if (_sound.isPlaying){
+							_sound.pause();
+							_sound.paused = true;
+						}
+					}
+					else{
+						if (_sound.paused){
+							_sound.play();
+							_sound.paused = false;
+						}
+					}
+				}
+				Object.entries(snd).forEach(function(_snd){
+					if(_snd[1].length){
+						//console.log(_snd[1]);
+						for(var i=1; i<_snd[1].length; ++i){
+							PauseUnpause(_snd[1][i]);
+						}
+					}
+					else
+						PauseUnpause(_snd[1]);
+				});
+			}
+			DrawDisclaimer(true);
+			snd.breathingHeavy.setVolume(0.0);
+			snd.breathingHeavy.play();
+			cam.position.copy(camPos);
+			cam.quaternion.setFromEuler(new THREE.Euler(camRot[3], camRot[2], camTilt[1], 'YXZ'));
+			ui.font = "32px gameFont";
+			
+			OnAnimate();
+			//AddFish();
+		}
+		function PlayRandomSound(sndArray, volume=1.0){
+			let _rst = RandomRange(1, sndArray.length-1);
+			if (_rst == sndArray[0])
+				_rst = _rst != sndArray.length-1 ? _rst+1 : 1;
+			sndArray[0] = _rst;
+			if (sndArray[_rst].isPlaying){
+				sndArray[_rst].stop();
+			}
+			sndArray[_rst].setVolume(volume);
+			sndArray[_rst].play();
+			return sndArray[_rst];
+		}
+		window.addEventListener("click", function(){
+			if (!paused) document.body.requestPointerLock();
+			if (!loaded){
+				loaded = true;
+				DrawDisclaimer();
+				OnLoad();
+			}
+			Actions.Interact = true;
+		});
+		function DrawDisclaimer(prg, name){
+			ui.clearRect(0, 0, window.innerWidth, window.innerHeight);
+			/*var hRatio = width / img.logo.width;
+			var vRatio = height / img.logo.height;
+			var ratio  = Math.min(hRatio, vRatio);
+			ui.drawImage(img.logo, window.innerWidth*0.5-hRatio, window.innerHeight*0.5-vRatio*ratio+48, img.logo.width*ratio, img.logo.height*ratio);*/
+			
+			ui.textAlign = "center";
+			if(!loaded){
+				ui.font = "36px gameFont";
+				ui.fillStyle = "white";
+				ui.fillText("Click on the screen to start the game.", window.innerWidth*0.5, window.innerHeight*0.5);
+			}
+			ui.font = "12px gameFont";
+			ui.fillText("Created and presented by GreatCorn (aka Yevhenii Ionenko).", window.innerWidth*0.5, 16);
+			ui.fillText("Powered by THREE.js r"+THREE.REVISION.toString(), window.innerWidth*0.5, 32);
+			ui.fillText("3D Models: GreatCorn", window.innerWidth*0.5, 48);
+			ui.fillText("Music: GreatCorn", window.innerWidth*0.5, 64);
+			ui.fillText("Scripting: GreatCorn, THREE.js", window.innerWidth*0.5, 80);
+			ui.fillText("Shaders, Post-Processing, Engine: THREE.js (WebGL), Copyright (c) 2010-2022 three.js authors", window.innerWidth*0.5, 96);
+			ui.fillText("Sounds: GreatCorn, freesound.org", window.innerWidth*0.5, 112);
+			ui.fillText("Textures: GreatCorn, ambientCG.com", window.innerWidth*0.5, 128);
+			
+			ui.fillText("ATHERD source code is licensed under the GNU General Public License v3.0.", window.innerWidth*0.5, window.innerHeight-48);
+			ui.fillText("The assets used in the game (including 3D models, music, textures and sounds) are licensed under a", window.innerWidth*0.5, window.innerHeight-32);
+			ui.fillText("Creative Commons Attribution-ShareAlike 4.0 International License. (c) Yevhenii Ionenko (aka GreatCorn), 2022", window.innerWidth*0.5, window.innerHeight-16);
+			if(prg)
+				++loadProgress;
+			if(name)
+				resources += name+'\r\n';
+			if(loaded){
+				ui.font = "24px gameFont";
+				ui.fillText("Loading...", window.innerWidth*0.5, window.innerHeight*0.5);
+				ui.fillRect(window.innerWidth*0.5-80, window.innerHeight*0.5+16, loadProgress*loadMultiplier, 24);
+				ui.fillText(loadProgress.toString()+'/'+loadAmount.toString(), window.innerWidth*0.5, window.innerHeight*0.5+64);
+			}
+		}
+		window.addEventListener("load", function(){
+			uiCanvas.width = window.innerWidth;
+			uiCanvas.height = window.innerHeight;
+			
+			ui.showLogo = false;
+			document.body.appendChild(uiCanvas);
+			
+			document.fonts.load("36px gameFont").then(function(){
+				let promise = document.getElementById("startAud").play();
+				if ((promise !== undefined) && Release){
+					promise.then(function(){
+						window.dispatchEvent(new Event("click"));
+						return;
+					});
+				}
+				
+				DrawDisclaimer();
+				window.onresize = function(){
+					uiCanvas.width = window.innerWidth;
+					uiCanvas.height = window.innerHeight;
+					DrawDisclaimer();
+				}
+			});
+			
+			if ('serviceWorker' in navigator) {
+				navigator.serviceWorker.register('./sw.js')
+				.then(function(registration) {
+					//console.log('Registration successful, scope is:', registration.scope);
+				})
+				.catch(function(error) {
+					//console.log('Service worker registration failed, error:', error);
+				});
+			}
+		});
+		document.addEventListener("pointerlockchange", function(){
+			if ((document.pointerLockElement == null) && !fixDelta && !paused){
+				Actions.Menu = true;
+			}
+		});
+	</SCRIPT>
+</HEAD>
+<BODY>
+	<AUDIO id=startAud src="./silence.mp3"></AUDIO>
+</BODY>
+</HTML>
