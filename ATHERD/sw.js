@@ -1,23 +1,8 @@
 const filesToCache = [
-	'/amdusias/',
-	'/amdusias/style.css',
-	'/amdusias/jDataView.js',
-	'/amdusias/localForage.js',
-	'/amdusias/main.js',
-	'/amdusias/MontserratAlternates-Light.otf',
-	'/amdusias/favicon.png',
-	'/amdusias/more.svg',
-	'/amdusias/next.svg',
-	'/amdusias/open.svg',
-	'/amdusias/pause.svg',
-	'/amdusias/play.svg',
-	'/amdusias/previous.svg',
-	'/amdusias/refresh.svg',
-	'/amdusias/sort.svg',
-	'/amdusias/wrench.svg'
+	'./'
 ];
 
-const staticCacheName = 'amdusias-cache-v1';
+const staticCacheName = 'ATHERD-cache';
 
 this.addEventListener('install', event => {
 	console.log('Attempting to install service worker and cache static assets');

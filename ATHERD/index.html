@@ -83,7 +83,7 @@
 		
 		var loaded = false;
 		var loadProgress = 0;
-		var loadAmount = 148;
+		var loadAmount = 184;
 		var loadMultiplier = 160/loadAmount;
 	
 		const uiCanvas = document.createElement("canvas");
@@ -93,13 +93,16 @@
 		var cam, light, ambLight, listener;
 		var state = -1;
 		var stateLerp = [0.0, 0.0];
+		var tape = false;
+		var tapePlayed = false;
 		var specialObjects = [];
 		var paused = false;
 		var rooms = [];
 		var specialRoomTimer = 12;
 		var stats;
 		
-		var deltaTime = 0.0, last = 0.0, timeScale = 1, fixDelta = false;
+		var ambTimer = 12000;
+		var deltaTime = 0.0, last = 0.0, timeScale = 1, unscaledDelta = 0.0, fixDelta = false;
 		var brVol = 1.0;
 		var canBlink = false;
 		var canControl = false;
@@ -111,14 +114,29 @@
 		var camRotOffset = [0.0, 0.0, 0.0, 0.0];
 		var camPos = new THREE.Vector3(-2, 1, -5.5);
 		var camTilt = [0.0, 0.0];
+		var curSpeed = 0.0;
 		var rotFwd = [0.0, 0.0];
 		var fov = 60;
 		var loudness = 0.0;
 		var sideRight = 1, sideUp = 1, walkAnim = [0,0], crouch = 0;
 		var stamina = 10.0;
-		var deadZone = 0.1;
+		var deadZone = 0.06;
 		var Sensitivity = 0.25;
 		var walkSpeed = 5, runSpeed = 10;
+		
+		const MSGType = {
+			Player: "Player",
+			Fish:	"Fish",
+			Room:	"Room",
+			State:	"State",
+			PlayerRequest:	"PlayerRequest",
+			PlayerResponse:	"PlayerResponse",
+			RoomGenerate:	"RoomGenerate"
+		}
+		var connected = false;
+		var playerID = 0;
+		var websocket;
+		var wssUrl = null;
 		
 		var fishActive = false;
 		var fishPos = new THREE.Vector3(48, 0, 0);
@@ -220,6 +238,7 @@
 		async function OnLoad(){
 			const scene = new THREE.Scene();
 			const loadGLTF = new GLTFLoader();
+			var prevGLTF = null;
 			const loadTexture = new THREE.TextureLoader();
 			const loadAud = new THREE.AudioLoader();
 			
@@ -246,19 +265,19 @@
 			Graphics.Fullscreen =	(GetCookie("Graphics.Fullscreen", "true") == "true");
 			Sensitivity =	parseFloat(GetCookie("Sensitivity", "0.25"));
 			Volume =		parseFloat(GetCookie("Volume", "1.0"));
-			if (!Graphics.Materials){
+			/*if (!Graphics.Materials){
 				loadAmount -= 20;
 				loadMultiplier = 160/loadAmount;
-			}
+			}*/
 			
 			listener.setMasterVolume(Volume);
 			
-			//console.log(cam);
+			console.log(cam);
 			
 			const ambLight = new THREE.AmbientLight(0x0);
 			scene.add(ambLight);
 			
-			scene.fog = new THREE.Fog(0x0, 0, 42);
+			scene.fog = new THREE.Fog(0x0, 0, 0);
 			scene.background = new THREE.Color(0x0);
 			
 			DrawDisclaimer(true);
@@ -271,7 +290,7 @@
 					xhttp.responseType = "arraybuffer";
 					
 					xhttp.onload = function(){
-						//console.log("LOADED RESOURCES");
+						console.log("LOADED RESOURCES");
 						resourceFile = this.response;
 						let pos = 0;
 						let dv = new DataView(resourceFile);
@@ -280,11 +299,11 @@
 							let length = dv.getUint32(pos, true);
 							pos += 4;
 							result.push(resourceFile.slice(pos, pos+length));
-							////console.log("LENGTH: ", length);
+							//console.log("LENGTH: ", length);
 							pos += length;
 						}
-						//console.log("PARSED", result.length, "RESOURCES");
-						//console.log(result);
+						console.log("PARSED", result.length, "RESOURCES");
+						console.log(result);
 						resolve(result);
 					}
 					xhttp.send();
@@ -323,32 +342,38 @@
 				vignette:	await LoadImage("./GFX/vignette.png")
 			}
 			
-			//console.log("Loading textures...");
-			function LoadTexture(fname){
+			console.log("Loading textures...");
+			function LoadTexture(fname, mattex){
 				return new Promise(function(resolve, reject){
 					function loadDone(x){
 						resolve(x);
 					}
-					loadTexture.load(Release ? GetResource() : fname, function(texture){
-						texture.flipY = false;
-						texture.wrapS = THREE.RepeatWrapping;
-						texture.wrapT = THREE.RepeatWrapping;
-						
-						loadDone(texture);
+					if(!Graphics.Materials && mattex){
+						++resourceProgressor;
+						loadDone(null);
 						DrawDisclaimer(true, fname);
-					});
+					}
+					else
+						loadTexture.load(Release ? GetResource() : fname, function(texture){
+							texture.flipY = false;
+							texture.wrapS = THREE.RepeatWrapping;
+							texture.wrapT = THREE.RepeatWrapping;
+							
+							loadDone(texture);
+							DrawDisclaimer(true, fname);
+						});
 				});
 			}
 			const tex = {
 				concrete:		await LoadTexture("./GFX/concrete.jpg"),
-				concrete_NRM:	Graphics.Materials ? await LoadTexture("./GFX/concrete_NRM.jpg")	: null,
+				concrete_NRM:	await LoadTexture("./GFX/concrete_NRM.jpg", true),
 				
 				door:		await LoadTexture("./GFX/door.jpg"),
-				door_MTLRGH:Graphics.Materials ? await LoadTexture("./GFX/door_MTLRGH.jpg")	: null,
-				door_NRM:	Graphics.Materials ? await LoadTexture("./GFX/door_NRM.jpg")	: null,
+				door_MTLRGH:await LoadTexture("./GFX/door_MTLRGH.jpg", true),
+				door_NRM:	await LoadTexture("./GFX/door_NRM.jpg", true),
 				
 				doorRed:	await LoadTexture("./GFX/doorRed.jpg"),
-				doorRed_NRM:Graphics.Materials ? await LoadTexture("./GFX/doorRed_NRM.jpg")	: null,
+				doorRed_NRM:await LoadTexture("./GFX/doorRed_NRM.jpg", true),
 				
 				dust:		await LoadTexture("./GFX/dust.jpg"),
 				dust1:		await LoadTexture("./GFX/dust1.jpg"),
@@ -356,53 +381,75 @@
 				dust3:		await LoadTexture("./GFX/dust3.jpg"),
 				
 				fish:		await LoadTexture("./GFX/fish.jpg"),
-				fish_MTLRGH:Graphics.Materials ? await LoadTexture("./GFX/fish_MTLRGH.jpg")	: null,
-				fish_NRM:	Graphics.Materials ? await LoadTexture("./GFX/fish_NRM.jpg")	: null,
+				fish_MTLRGH:await LoadTexture("./GFX/fish_MTLRGH.jpg", true),
+				fish_NRM:	await LoadTexture("./GFX/fish_NRM.jpg", true),
 			
 				floor:		await LoadTexture("./GFX/floor.jpg"),
-				floor_DISP:	Graphics.Materials ? await LoadTexture("./GFX/floor_DISP.jpg")	: null,
-				floor_NRM:	Graphics.Materials ? await LoadTexture("./GFX/floor_NRM.jpg")	: null,
-				floor_RGH:	Graphics.Materials ? await LoadTexture("./GFX/floor_RGH.jpg")	: null,
+				floor_DISP:	await LoadTexture("./GFX/floor_DISP.jpg", true),
+				floor_NRM:	await LoadTexture("./GFX/floor_NRM.jpg", true),
+				floor_RGH:	await LoadTexture("./GFX/floor_RGH.jpg", true),
+				
+				her:		await LoadTexture("./GFX/her.jpg"),
+				her_A:		await LoadTexture("./GFX/her_A.jpg", true),
+				her_MTLRGH:	await LoadTexture("./GFX/her_MTLRGH.jpg", true),
+				her_NRM:	await LoadTexture("./GFX/her_NRM.jpg", true),
 				
 				key:		await LoadTexture("./GFX/key.jpg"),
-				key_NRM:	Graphics.Materials ? await LoadTexture("./GFX/key_NRM.jpg")	: null,
+				key_NRM:	await LoadTexture("./GFX/key_NRM.jpg", true),
 				
 				metal:			await LoadTexture("./GFX/metal.jpg"),
-				metal_MTLRGH:	Graphics.Materials ? await LoadTexture("./GFX/metal_MTLRGH.jpg")	: null,
-				metal_NRM:		Graphics.Materials ? await LoadTexture("./GFX/metal_NRM.jpg")		: null,
+				metal_MTLRGH:	await LoadTexture("./GFX/metal_MTLRGH.jpg", true),
+				metal_NRM:		await LoadTexture("./GFX/metal_NRM.jpg", true),
 				
 				metalFloor:			await LoadTexture("./GFX/metalFloor.jpg"),
-				metalFloor_DISP:	Graphics.Materials ? await LoadTexture("./GFX/metalFloor_DISP.jpg")		: null,
-				metalFloor_MTLRGH:	Graphics.Materials ? await LoadTexture("./GFX/metalFloor_MTLRGH.jpg")	: null,
-				metalFloor_NRM:		Graphics.Materials ? await LoadTexture("./GFX/metalFloor_NRM.jpg")		: null,
+				metalFloor_DISP:	await LoadTexture("./GFX/metalFloor_DISP.jpg", true),
+				metalFloor_MTLRGH:	await LoadTexture("./GFX/metalFloor_MTLRGH.jpg", true),
+				metalFloor_NRM:		await LoadTexture("./GFX/metalFloor_NRM.jpg", true),
 				
 				misc:		await LoadTexture("./GFX/misc.jpg"),
-				misc_NRM:	Graphics.Materials ? await LoadTexture("./GFX/misc_NRM.jpg")	: null,
-				misc_MTLRGH:Graphics.Materials ? await LoadTexture("./GFX/misc_MTLRGH.jpg")	: null,
+				misc_NRM:	await LoadTexture("./GFX/misc_NRM.jpg", true),
+				misc_MTLRGH:await LoadTexture("./GFX/misc_MTLRGH.jpg", true),
 				
 				paint:		await LoadTexture("./GFX/paint.jpg"),
-				paint_NRM:	Graphics.Materials ? await LoadTexture("./GFX/paint_NRM.jpg")	: null,
+				paint_NRM:	await LoadTexture("./GFX/paint_NRM.jpg", true),
+				
+				papers:		await LoadTexture("./GFX/papers.jpg"),
+				papers_A:		await LoadTexture("./GFX/papers_A.jpg"),
 
 				planks:			await LoadTexture("./GFX/planks.jpg"),
-				planks_DISP:	Graphics.Materials ? await LoadTexture("./GFX/planks_DISP.jpg")		: null,
-				planks_MTLRGH:	Graphics.Materials ? await LoadTexture("./GFX/planks_MTLRGH.jpg")	: null,
-				planks_NRM:		Graphics.Materials ? await LoadTexture("./GFX/planks_NRM.jpg")		: null,
+				planks_DISP:	await LoadTexture("./GFX/planks_DISP.jpg", true),
+				planks_MTLRGH:	await LoadTexture("./GFX/planks_MTLRGH.jpg", true),
+				planks_NRM:		await LoadTexture("./GFX/planks_NRM.jpg", true),
+				
+				posters:	await LoadTexture("./GFX/posters.jpg"),
+				posters_DISP:await LoadTexture("./GFX/posters_DISP.png", true),
 				
 				road:		await LoadTexture("./GFX/road.jpg"),
-				road_NRM:	Graphics.Materials ? await LoadTexture("./GFX/road_NRM.jpg")	: null,
+				road_NRM:	await LoadTexture("./GFX/road_NRM.jpg", true),
+				
+				rubber:		await LoadTexture("./GFX/rubber.jpg"),
+				rubber_NRM:	await LoadTexture("./GFX/rubber_NRM.jpg", true),
 				
 				snow:		await LoadTexture("./GFX/snow.jpg"),
-				snow_NRM:	Graphics.Materials ? await LoadTexture("./GFX/snow_NRM.jpg")	: null,
+				snow_NRM:	await LoadTexture("./GFX/snow_NRM.jpg", true),
+				
+				tape:		await LoadTexture("./GFX/tape.jpg"),
+				tape_NRM:	await LoadTexture("./GFX/tape_NRM.jpg", true),
+				
+				tiles:		await LoadTexture("./GFX/tiles.jpg"),
+				tiles_DISP:	await LoadTexture("./GFX/tiles_DISP.jpg", true),
+				tiles_RGH:	await LoadTexture("./GFX/tiles_RGH.jpg", true),
+				tiles_NRM:	await LoadTexture("./GFX/tiles_NRM.jpg", true),
 
 				wall:		await LoadTexture("./GFX/wall.jpg"),
-				wall_DISP:	Graphics.Materials ? await LoadTexture("./GFX/wall_DISP.jpg")	: null,
-				wall_NRM:	Graphics.Materials ? await LoadTexture("./GFX/wall_NRM.jpg")	: null,
-				wall_RGH:	Graphics.Materials ? await LoadTexture("./GFX/wall_RGH.jpg")	: null,
+				wall_DISP:	await LoadTexture("./GFX/wall_DISP.jpg", true),
+				wall_NRM:	await LoadTexture("./GFX/wall_NRM.jpg", true),
+				wall_RGH:	await LoadTexture("./GFX/wall_RGH.jpg", true),
 				
 				wood:		await LoadTexture("./GFX/wood.jpg"),
-				wood_DISP:	Graphics.Materials ? await LoadTexture("./GFX/wood_DISP.jpg")	: null,
-				wood_RGH:	Graphics.Materials ? await LoadTexture("./GFX/wood_RGH.jpg")	: null,
-				wood_NRM:	Graphics.Materials ? await LoadTexture("./GFX/wood_NRM.jpg")	: null,
+				wood_DISP:	await LoadTexture("./GFX/wood_DISP.jpg", true),
+				wood_RGH:	await LoadTexture("./GFX/wood_RGH.jpg", true),
+				wood_NRM:	await LoadTexture("./GFX/wood_NRM.jpg", true),
 
 				hdri:	await LoadTexture("./GFX/hdri.jpg"),
 				hdri1:	await LoadTexture("./GFX/hdri1.jpg"),
@@ -414,8 +461,9 @@
 			tex.fish.flipY = false;
 			tex.key.flipY = false;
 			tex.misc.flipY = false;
-			tex.metal.repeat =			new THREE.Vector2(2, 2);
-			tex.planks.repeat =			new THREE.Vector2(1, 2);
+			tex.metal.repeat =		new THREE.Vector2(2, 2);
+			tex.planks.repeat =		new THREE.Vector2(1, 2);
+			tex.rubber.repeat =		new THREE.Vector2(2, 2);
 			tex.wood.repeat =		new THREE.Vector2(2, 2);
 			
 			tex.lut.wrapS = THREE.ClampToEdgeWrapping;
@@ -439,6 +487,8 @@
 				tex.planks_DISP.repeat =	new THREE.Vector2(1, 2);
 				tex.planks_NRM.repeat =		new THREE.Vector2(1, 2);
 				tex.planks_MTLRGH.repeat =	new THREE.Vector2(1, 2);
+				
+				tex.rubber_NRM.repeat =		new THREE.Vector2(2, 2);
 				
 				tex.wood_DISP.repeat =	new THREE.Vector2(2, 2);
 				tex.wood_NRM.repeat =	new THREE.Vector2(2, 2);
@@ -491,7 +541,8 @@
 				glass: new THREE.MeshStandardMaterial({
 					map:			tex.paint,
 					normalMap:		tex.paint_NRM,
-					alphaMap:		tex.wood,
+					
+					opacity:	0.5,
 					
 					transparent: true,
 					
@@ -556,8 +607,8 @@
 					envMap: envHdri.texture
 				}),
 				rubber: new THREE.MeshStandardMaterial({
-					color:	0x111111,
-					normalMap:		tex.metal_NRM,
+					map:		tex.rubber,
+					normalMap:	tex.rubber_NRM,
 					
 					roughness: 0.9,
 					
@@ -625,6 +676,14 @@
 					
 					envMap: envHdri.texture
 				}),
+				tiles: new THREE.MeshStandardMaterial({
+					map:			tex.tiles,
+					bumpMap:		tex.tiles_DISP,
+					normalMap:		tex.tiles_NRM,
+					roughnessMap:	tex.tiles_RGH,
+					
+					envMap: envHdri.texture
+				}),
 				snow: new THREE.MeshStandardMaterial({
 					map:			tex.snow,
 					normalMap:		tex.snow_NRM,
@@ -633,13 +692,55 @@
 					
 					envMap: envHdri.texture
 				}),
+				poster: new THREE.MeshStandardMaterial({
+					map: 		tex.posters,
+					bumpMap:	tex.posters_DISP,
+					roughnessMap:tex.floor_DISP,
+					roughness:	0.6,
+					envMap: envHdri.texture
+				}),
+				papers: new THREE.MeshStandardMaterial({
+					alphaMap:	tex.papers_A,
+					alphaTest: 0.5,
+					map: 		tex.papers,
+					roughnessMap:tex.floor_DISP,
+					roughness:	0.8,
+					envMap: envHdri.texture
+				}),
+				her: new THREE.MeshStandardMaterial({
+					alphaMap:	tex.her_A,
+					alphaTest:	0.5,
+					map: 		tex.her,
+					roughnessMap:tex.her_MTLRGH,
+					metalnessMap:tex.her_MTLRGH,
+					normalMap:	tex.her_NRM,
+					
+					metalness:	0.9,
+					
+					envMap: envHdri.texture
+				}),
+				tape: new THREE.MeshStandardMaterial({
+					map: 		tex.tape,
+					normalMap:	tex.tape,
+					
+					roughness: 0.2,
+					
+					normalScale: new THREE.Vector2(0.4, 0.4),
+					
+					envMap: envHdri.texture
+				})
+				
 			};
 			DrawDisclaimer(true);
 			
-			//console.log("Loading models.");
+			console.log("Loading models.");
 			function LoadGLTF(fname, materials){
 				return new Promise(function(resolve, reject){
 					function loadDone(x){
+						/*if(prevGLTF)
+							scene.remove(prevGLTF);
+						prevGLTF = x.scene ? x.scene.clone() : x.clone();
+						scene.add(prevGLTF.scene ? prevGLTF.scene : prevGLTF);*/
 						resolve(x);
 					}
 					loadGLTF.load(Release ? GetResource() : fname, function(mesh){
@@ -658,7 +759,7 @@
 							//mesh.scene.castShadow = true;
 							//mesh.scene.receiveShadows = true;
 						}
-						//console.log(mesh);
+						console.log(mesh);
 						loadDone(mesh.animations.length > 0 ? mesh : mesh.scene);
 						DrawDisclaimer(true, fname);
 					});
@@ -666,10 +767,15 @@
 			}
 			const mdl = {
 				arch:[
-						await LoadGLTF("./GFX/wallArch.glb", [mat.paint, mat.planks, mat.wall, mat.trans]),
-						await LoadGLTF("./GFX/wallDoorOpen.glb", [mat.planks, mat.wall, mat.paint, mat.door, mat.trans]),
-						await LoadGLTF("./GFX/wallDoorFrame.glb", [mat.planks, mat.wall, mat.paint, mat.trans]),
-					],
+					await LoadGLTF("./GFX/wallArch.glb", [mat.paint, mat.planks, mat.wall, mat.trans]),
+					await LoadGLTF("./GFX/wallDoorOpen.glb", [mat.planks, mat.wall, mat.paint, mat.door, mat.trans]),
+					await LoadGLTF("./GFX/wallDoorFrame.glb", [mat.planks, mat.wall, mat.paint, mat.trans]),
+					await LoadGLTF("./GFX/poster1.glb", [mat.poster, mat.glass]),
+					await LoadGLTF("./GFX/poster2.glb", [mat.poster, mat.glass]),
+					await LoadGLTF("./GFX/poster3.glb", [mat.poster, mat.glass]),
+					await LoadGLTF("./GFX/papers1.glb", mat.papers),
+					await LoadGLTF("./GFX/papers2.glb", mat.papers),
+				],
 				crowbar:	await LoadGLTF("./GFX/crowbar.glb", mat.misc),
 				elecSwitch:	await LoadGLTF("./GFX/elecSwitch.glb", [mat.metal, mat.rubber]),
 				elevatorDoor:	await LoadGLTF("./GFX/elevatorDoor.glb", [mat.metal, mat.trans, mat.wood, mat.rubber]),
@@ -677,6 +783,7 @@
 				door:		await LoadGLTF("./GFX/door.glb", [mat.doorRed, mat.trans]),
 				doorRigged:	await LoadGLTF("./GFX/doorRigged.glb", mat.doorRed),
 				fish:		await LoadGLTF("./GFX/fish.glb", mat.fish),
+				her:		await LoadGLTF("./GFX/her.glb", mat.her),
 				key:		await LoadGLTF("./GFX/key.glb", [mat.key, mat.metal]),
 				lockerDoor: await LoadGLTF("./GFX/lockerDoor.glb", [mat.metal, mat.door]),
 				/*planks:[
@@ -694,7 +801,7 @@
 					await LoadGLTF("./GFX/plank4R.glb", mat.wood),
 					await LoadGLTF("./GFX/plank5R.glb", mat.wood),
 					await LoadGLTF("./GFX/plank6R.glb", mat.wood),
-					],
+				],
 				room:[	
 					await LoadGLTF("./GFX/roomStraight.glb", [mat.floor, mat.light, mat.metal, mat.paint, mat.planks, mat.wall, mat.door, mat.trans]),
 					await LoadGLTF("./GFX/roomStraight1.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.door, mat.trans]),
@@ -702,21 +809,28 @@
 					await LoadGLTF("./GFX/roomC.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans]),
 					await LoadGLTF("./GFX/roomT.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans]),
 					await LoadGLTF("./GFX/roomX.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans]),
-					],
+					await LoadGLTF("./GFX/roomT1.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.door]),
+					await LoadGLTF("./GFX/roomX1.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans]),
+					await LoadGLTF("./GFX/roomStairs.glb", [mat.planks, mat.wall, mat.light, mat.trans, mat.metal, mat.paint, mat.floor, mat.concrete]),
+				],
 				specialRoom:[
 					await LoadGLTF("./GFX/roomStart.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.wood, mat.metalFloor, mat.metal]),
 					await LoadGLTF("./GFX/roomExit.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans]),
 					await LoadGLTF("./GFX/roomKey.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.wood]),
 					await LoadGLTF("./GFX/roomKeyOpen.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.wood, mat.misc, mat.rubber]),
 					await LoadGLTF("./GFX/roomElec.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.rubber, mat.glass, mat.misc]),
+					await LoadGLTF("./GFX/roomToilets.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.tiles, mat.paint, mat.rubber]),
+					await LoadGLTF("./GFX/roomLounge.glb", [mat.floor, mat.paint, mat.planks, mat.wall, mat.metal, mat.light, mat.trans, mat.rubber, mat.wood, mat.misc]),
 				],
+				tape: await LoadGLTF("./GFX/tape.glb", mat.tape),
+				tapeDeck: await LoadGLTF("./GFX/tapeDeck.glb", mat.tape),
 				wall: await LoadGLTF("./GFX/wall.glb", [mat.planks, mat.wall, mat.paint])
 			};
-			
+			if(prevGLTF) scene.remove(prevGLTF);
 			/*const planksObject = new THREE.Object3D();
 			mdl.planks.forEach(function(plank){
 				/*plank.mixer = new THREE.AnimationMixer(plank.scene);
-				//console.log(plank);
+				console.log(plank);
 				plank.anim = plank.mixer.clipAction(plank.animations[0]),
 				plank.scene.children[0].children[0].material = mat.metal;
 				plank.scene.children[0].children[1].material = mat.wood;
@@ -726,11 +840,11 @@
 			const planksRObject = new THREE.Object3D();
 			mdl.planksR.forEach(function(plank){
 				plank.mixer = new THREE.AnimationMixer(plank.scene);
-				//console.log(plank);
+				console.log(plank);
 				plank.anim = plank.mixer.clipAction(plank.animations[0]);
 				plank.anim.loop = THREE.LoopOnce;
 				plank.anim.clampWhenFinished = true;
-				//console.log(plank);
+				console.log(plank);
 				plank.scene.children[1].children[0].material = mat.metal;
 				plank.scene.children[1].children[1].material = mat.wood;
 				plank.scene.position.z += 3;
@@ -745,12 +859,18 @@
 				mdl.room[3].roomType = RoomType.TwoWayCorner;
 				mdl.room[4].roomType = RoomType.ThreeWay;
 				mdl.room[5].roomType = RoomType.FourWay;
-			var specialActive = [false, false, false, false, false];
+				mdl.room[6].roomType = RoomType.ThreeWay;
+				mdl.room[7].roomType = RoomType.FourWay;
+				mdl.room[8].roomType = RoomType.OneWay;
+				
+			var specialActive = [false, false, false, false, false, false, false];
 				mdl.specialRoom[0].roomType = RoomType.OneWay;
 				mdl.specialRoom[1].roomType = RoomType.OneWay;
 				mdl.specialRoom[2].roomType = RoomType.OneWay;
 				mdl.specialRoom[3].roomType = RoomType.OneWay;
 				mdl.specialRoom[4].roomType = RoomType.OneWay;
+				mdl.specialRoom[5].roomType = RoomType.OneWay;
+				mdl.specialRoom[6].roomType = RoomType.TwoWay;
 				
 			mdl.doorRigged.scene.children[0].children[1].children[0].material = mat.doorRed;
 			mdl.doorRigged.scene.children[0].children[1].children[1].material = mat.trans;
@@ -765,7 +885,8 @@
 			mdl.doorRigged.actions[0].clampWhenFinished = true;
 			mdl.doorRigged.actions[1].clampWhenFinished = true;
 			
-			mdl.fish.scene.children[0].children[1].material = mat.fish;
+			mdl.fish.scene.children[0].children[1].children[0].material = mat.fish;
+			mdl.fish.scene.children[0].children[1].children[1].material = mat.light;
 			mdl.fish.mixer = new THREE.AnimationMixer(mdl.fish.scene);
 			mdl.fish.actions = [
 				mdl.fish.mixer.clipAction(mdl.fish.animations[0]),
@@ -773,6 +894,18 @@
 				mdl.fish.mixer.clipAction(mdl.fish.animations[2]),
 				mdl.fish.mixer.clipAction(mdl.fish.animations[3]),
 			];
+			
+			mdl.tapeDeck.scene.children[0].children[1].children[0].material = mat.metal;
+			mdl.tapeDeck.scene.children[0].children[1].children[1].material = mat.rubber;
+			mdl.tapeDeck.scene.children[0].children[1].children[2].material = mat.rubber;
+			mdl.tapeDeck.scene.children[0].children[1].children[3].material = mat.metal;
+			mdl.tapeDeck.scene.children[0].children[1].children[4].material = mat.metal;
+			mdl.tapeDeck.scene.children[0].children[1].children[5].material = mat.tape;
+			mdl.tapeDeck.mixer = new THREE.AnimationMixer(mdl.tapeDeck.scene);
+			mdl.tapeDeck.anim = mdl.tapeDeck.mixer.clipAction(mdl.tapeDeck.animations[0]);
+			mdl.tapeDeck.anim.loop = THREE.LoopOnce;
+			mdl.tapeDeck.anim.clampWhenFinished = true;
+			
 			//0 - walk, 1 - alert, 2 - run, 3 - idle
 			mdl.fish.head = mdl.fish.scene.getObjectByProperty("name", "mixamorigHead");
 				//FISH PARAMS
@@ -790,6 +923,21 @@
 				mdl.fish.stepTimer = 0.0;
 				mdl.fish.stuckTimer = 0.0;
 				mdl.fish.thinking = false;
+				
+			mdl.her.scene.children[0].children[1].material = mat.her;
+				mdl.her.head = mdl.her.scene.getObjectByProperty("name", "mixamorigHead");
+				mdl.her.pos = new THREE.Vector3(0, 0, 0);
+				mdl.her.prevPos = new THREE.Vector3(0, 0, 0);
+				mdl.her.curSpeed = 0.0;
+				mdl.her.bodyRot = 0.0;
+				mdl.her.headRot = 0.0;
+				mdl.her.crouch = 0.0;
+			mdl.her.mixer = new THREE.AnimationMixer(mdl.her.scene);
+			mdl.her.actions = [
+				mdl.her.mixer.clipAction(mdl.her.animations[0]),
+				mdl.her.mixer.clipAction(mdl.her.animations[1]),
+				mdl.her.mixer.clipAction(mdl.her.animations[2]),
+			];
 				
 			function LoadSound(fname, minDistance = 0, maxDistance = 32){
 				return new Promise(function(resolve, reject){
@@ -813,6 +961,16 @@
 			}
 			const snd = {
 				ambience: await LoadSound("./SFX/ambience.mp3"),
+				ambient: [ 0,
+						await LoadSound("./SFX/ambient-01.mp3", 4, 48),
+						await LoadSound("./SFX/ambient-02.mp3", 4, 48),
+						await LoadSound("./SFX/ambient-03.mp3", 4, 48),
+						await LoadSound("./SFX/ambient-04.mp3", 4, 48),
+						await LoadSound("./SFX/ambient-05.mp3", 4, 48),
+						await LoadSound("./SFX/ambient-06.mp3", 4, 48),
+						await LoadSound("./SFX/ambient-07.mp3", 4, 48),
+						await LoadSound("./SFX/ambient-08.mp3", 4, 48),
+						await LoadSound("./SFX/ambient-09.mp3", 4, 48)],
 				breathing: await LoadSound("./SFX/breathing.mp3"),
 				breathingHeavy: await LoadSound("./SFX/breathingHeavy.mp3"),
 				crowbar:	await LoadSound("./SFX/crowbar.mp3"),
@@ -842,6 +1000,7 @@
 						await LoadSound("./SFX/nex-03.mp3")],
 				powerDown:	await LoadSound("./SFX/powerDown.mp3"),
 				powerUp:	await LoadSound("./SFX/powerUp.mp3"),
+				prologue:	await LoadSound("./SFX/prologue.mp3", 4, 20),
 				step: [	0,
 						await LoadSound("./SFX/step-01.mp3"), 
 						await LoadSound("./SFX/step-02.mp3"), 
@@ -861,6 +1020,8 @@
 						await LoadSound("./SFX/sus-01.mp3"), 
 						await LoadSound("./SFX/sus-02.mp3"), 
 						await LoadSound("./SFX/sus-03.mp3")],
+				tape:	await LoadSound("./SFX/tape.mp3"),
+				tapePlay:	await LoadSound("./SFX/tapePlay.mp3"),
 				wood: [ 0,
 						await LoadSound("./SFX/wood-01.mp3", 4, 12), 
 						await LoadSound("./SFX/wood-02.mp3", 4, 12), 
@@ -869,8 +1030,9 @@
 						
 				music: [ 0,
 					await LoadSound("./SFX/music-exit.mp3"),
-					await LoadSound("./SFX/music-run.mp3", 6, 24),
-					await LoadSound("./SFX/music-realization.mp3")]
+					await LoadSound("./SFX/music-run.mp3", 16, 48),
+					await LoadSound("./SFX/music-realization.mp3"),
+					await LoadSound("./SFX/music-silencio.mp3", 8, 24),]
 			};
 			mdl.doorRigged.scene.add(snd.doorBudge);
 			mdl.doorRigged.scene.add(snd.wood[1]);
@@ -893,8 +1055,12 @@
 			
 			snd.breathingHeavy.loop = true;
 			
+			mdl.tapeDeck.scene.add(snd.prologue);
+			
 			snd.music[2].loop = true;
+			snd.music[4].loop = true;
 			mdl.fish.scene.add(snd.music[2]);
+			mdl.fish.scene.add(snd.music[4]);
 			
 			/*const reverb = listener.context.createConvolver();
 			listener.buffer = snd.sus[1].buffer;
@@ -947,13 +1113,14 @@
 				document.body.appendChild(stats.dom);
 			}
 			
-			//COMPOSER AND POST-PROCESSING EFFECTS
+			//COMPOSER AND POST-PROCESSING EFFECTS 0
 			const composer = new EffectComposer(rend);
 			
 			const renderPass = new RenderPass(scene, cam);
+			console.log(composer.passes);
 			composer.addPass(renderPass);
 			
-			//FXAA
+			//FXAA	1
 			const fxaaPass = new ShaderPass(FXAAShader);
 			const pixelRatio = rend.getPixelRatio();
 			fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
@@ -961,7 +1128,7 @@
 			if(Graphics.FXAA)
 				composer.addPass(fxaaPass);
 			
-			//SAO
+			//SAO	2
 			const saoPass = new SAOPass(scene, cam, true, true);
 			//saoPass.params.saoBlur = false;
 			saoPass.params.saoBias = -1;
@@ -971,24 +1138,25 @@
 			if(Graphics.SAO)
 				composer.addPass(saoPass);
 			
-			//BLOOM
+			//BLOOM	3
 			const bloomPass = new UnrealBloomPass( new THREE.Vector2( window.innerWidth, window.innerHeight ), 1.5, 1.2, 0.6 );
 			if(Graphics.Bloom)
 				composer.addPass(bloomPass);
 				
-			//FILM
+			
+			//AFTERIMAGE	4
+			const afterimagePass = new AfterimagePass(0.6);
+			if(Graphics.MotionBlur)
+				composer.addPass(afterimagePass);
+				
+			//FILM	5
 			var filmPass = new FilmPass(0.2, 0, 0, false);
 			composer.addPass(filmPass);
 			/*filmPass.fsQuad.onBeforeRender = function(){
 				filmPass.material.uniforms["nIntensity"] = 0.0;
 				filmPass.material.uniformsNeedUpdate = true;
-				//console.log("Hello");
+				console.log("Hello");
 			}*/
-			
-			//AFTERIMAGE
-			const afterimagePass = new AfterimagePass(0.6);
-			if(Graphics.MotionBlur)
-				composer.addPass(afterimagePass);
 			
 			//BLUR
 			/*const hblur = new ShaderPass(HorizontalBlurShader);
@@ -997,10 +1165,10 @@
 			vblur.renderToScreen = true;
 			composer.addPass(vblur);*/
 			
-			//LUT
+			//LUT	6
 			const lutPass = new LUTPass();
 			lutPass.lut = tex.lut;
-			composer.addPass( lutPass );
+			composer.addPass(lutPass);
 			
 			//DOF
 			/*const bokehPass = new BokehPass(scene, cam, {
@@ -1030,10 +1198,8 @@
 					case 27: Actions.Menu		=  true;	break;
 					case 70: if (!Release) timeScale = 6;	break;
 					case 71: 
-						if (!Release){
-							resources = 
-							SaveString("resources.txt", resources);
-						}
+						if (!Release)
+							resources = SaveString("resources.txt", resources);
 						break;
 					case 72: 
 						if (!Release){
@@ -1049,7 +1215,8 @@
 								}, i*1000);
 							}
 							plf();*/
-							state = 9;
+							SetState(9);
+							tape = true;
 						}
 						break;
 					case 73: 
@@ -1060,7 +1227,7 @@
 					case 74: 
 						if (!Release){
 							ParticleDust(camPos, 6, 0.06, 0.1, 3, 1, 0x222222);
-							//console.log(specialObjects[9]);
+							console.log(specialObjects[9]);
 						}
 						break;
 					case 75: 
@@ -1086,8 +1253,8 @@
 				}
 			}
 			document.onmousemove = function(event){
-				Actions.LookVertical = -event.movementY;
-				Actions.LookHorizontal = -event.movementX;
+				Actions.LookVertical = -event.movementY*unscaledDelta*64;
+				Actions.LookHorizontal = -event.movementX*unscaledDelta*64;
 				mousePos = [event.clientX, event.clientY];
 				gamepadMouse = false;
 			}
@@ -1105,10 +1272,14 @@
 			}
 			
 			
-			//console.log("Scene initialized.");
+			console.log("Scene initialized.");
 			
 			const worldColliders = new THREE.Object3D();
 			scene.add(worldColliders);
+			
+			if(wssUrl !== null)
+				connected = await ConnectSocket(wssUrl);
+			console.log("WSS: Operations complete");
 			
 			function CreateRoom(num, special = false){
 				let tempRoom = special ? mdl.specialRoom[num].clone() : mdl.room[num].clone();
@@ -1213,7 +1384,7 @@
 							}
 							break;
 						case 4:
-							specialObjects[5] = mdl.lockerDoor.clone();
+							specialObjects[5] = mdl.lockerDoor;
 							specialObjects[5].position.set(0.9, 0, 3.29);
 							specialObjects[5].shownHand = false;
 							specialObjects[5].rotation.y = (state > 7) ? Math.PI*0.5 : 0;
@@ -1221,7 +1392,7 @@
 							specialObjects[5].add(snd.lockerBudge);
 							tempRoom.add(specialObjects[5]);
 							
-							specialObjects[6] = mdl.elecSwitch.clone();
+							specialObjects[6] = mdl.elecSwitch;
 							specialObjects[6].position.set(-1.65, 0.6, 1.97);
 							specialObjects[6].shownHand = false;
 							specialObjects[6].switchRot = [(state > 4) ? 0 : Math.PI];
@@ -1235,6 +1406,22 @@
 								specialObjects[7].shownHand = false;
 								tempRoom.add(specialObjects[7]);
 							}
+							break;
+						case 5:
+							if(!tape){
+								specialObjects[10] = mdl.tape;
+								specialObjects[10].rotation.y = Math.random()*6.28;
+								specialObjects[10].position.set(2.4, -1.98, -2);
+								specialObjects[10].shownHand = false;
+								tempRoom.add(specialObjects[10]);
+							}
+							break;
+						case 6:
+							specialObjects[11] = mdl.tapeDeck.scene;
+							//specialObjects[11].rotation.y = Math.random()*6.28;
+							specialObjects[11].position.set(-1.5, -0.7, 2.7);
+							specialObjects[11].shownHand = false;
+							tempRoom.add(specialObjects[11]);
 							break;
 					}
 					tempRoom.specialNum = num; 
@@ -1259,19 +1446,22 @@
 						}
 						break;
 				}
-				//console.log(tempRoom);*/
+				console.log(tempRoom);*/
 				
 				
 				rooms.push(tempRoom);
 				worldColliders.add(tempRoom);
 				
-				////console.log("ROOM: Created room:", num, tempRoom);
+				//console.log("ROOM: Created room:", num, tempRoom);
 				
 				return tempRoom;
 			}
+			
 			var startRoom = CreateRoom(0, true);
-			Generate(startRoom);
-			Generate(startRoom.connected[0].parent);
+			if(!connected){
+				Generate(startRoom);
+				Generate(startRoom.connected[0].parent);
+			}
 			
 			function UpdateRoomIDs(){
 				//GLOBAL ROOM ID UPDATE
@@ -1302,6 +1492,18 @@
 				}
 				scene.add(specialObjects[9]);
 			}
+			function PlayAmbient(){
+				console.log("Playing ambient sound");
+				let ambObj = new THREE.Object3D();
+				ambObj.position.set(camPos.x+RandomFRange(-24, 24), 0, camPos.z+RandomFRange(-24, 24));
+				scene.add(ambObj);
+				ambObj.add(PlayRandomSound(snd.ambient));
+				SetTimeout(function(){
+					scene.remove(ambObj);
+				}, 9000);
+				ambTimer = RandomFRange(12000, 60000);
+				SetTimeout(PlayAmbient, ambTimer);
+			}
 			
 			function OnAnimate(now) {
 				if (!isNaN(now)){
@@ -1309,7 +1511,8 @@
 						last = now;
 						fixDelta = false;
 					}
-					deltaTime = Math.min(1, (now - last) * 0.001) * timeScale;
+					unscaledDelta = Math.min(1, (now - last) * 0.001);
+					deltaTime = unscaledDelta * (connected ? 1 : timeScale);
 					last = now;
 				}
 				timeOuts.forEach(function(timeOut){
@@ -1328,6 +1531,20 @@
 				//var globalCamPos = new THREE.Vector3();
 				//cam.getWorldPosition(globalCamPos);
 				light.position.copy(cam.position);
+				if(connected){
+					mdl.her.mixer.update(deltaTime);
+					mdl.her.scene.position.lerp(mdl.her.pos, deltaTime*18);
+					mdl.her.scene.rotation.y = LerpAngle(mdl.her.scene.rotation.y, mdl.her.bodyRot, deltaTime*18);
+					mdl.her.head.rotation.x = mdl.her.headRot;
+					mdl.her.head.rotation.y = mdl.her.scene.rotation.y - mdl.her.bodyRot;
+					
+					//mdl.her.scene.scale.set(1.0+mdl.her.crouch*0.5, 1.0-mdl.her.crouch*0.5, 1.0+mdl.her.crouch*0.5);
+					
+					mdl.her.actions[0].timeScale = Lerp(mdl.her.actions[0].timeScale, mdl.her.curSpeed*9, deltaTime*6);
+					mdl.her.actions[0].weight = mdl.her.actions[0].timeScale;
+					mdl.her.actions[1].weight = Math.abs(mdl.her.actions[0].weight-1.0)-mdl.her.crouch;
+					mdl.her.actions[2].weight = mdl.her.crouch;
+				}
 				
 				if(fishActive)
 					FishAI();
@@ -1353,14 +1570,21 @@
 				if(canControl && (!canBlink || !Actions.Blink))
 					Controls();
 				//BLING
-				if(state < 10)
-					scene.fog.far = (Actions.Blink && canBlink) ? Lerp(scene.fog.far, 0, deltaTime*16) : Lerp(scene.fog.far, 42-Math.abs(stamina-10.0), deltaTime*8);
+				if((state > 1) && (state < 10)){
+					var _bl = (Actions.Blink && canBlink);
+					scene.fog.far = _bl ? Lerp(scene.fog.far, 0, deltaTime*16) : Lerp(scene.fog.far, 42-Math.abs(stamina-10.0), deltaTime*8);
+					if(stamina < 0)
+						Kill();
+					else
+						stamina -= _bl ? deltaTime : 0;
+				}
 				brVol = (Actions.Blink && canBlink) ? Lerp(brVol, 0.3, deltaTime) : Lerp(brVol, 0.0, deltaTime*6);
 				snd.breathing.setVolume(brVol);
 				snd.breathingHeavy.setVolume(Clamp(Clamp(Math.abs(stamina*0.2-2), 0.0, 1.0)-brVol*4, 0.0, 1.0));
 				
-				if (state < 10)
-					RoomGenerator();
+				if (state < 10){
+					RoomGenerator(cam.position);
+				}
 				
 				Particles();
 				if (!Release) stats.begin();
@@ -1375,7 +1599,7 @@
 					Actions.Menu = false;
 					
 				//PLANKS ANIMATIONS DIDN'T WORK
-				//THEY ACTUALLY DID
+				//THEY ACTUALLY DID YOU WERE JUST A DUMBFUCK
 				/*for (var i=0; i<PlankAnim.length; ++i){
 					if (PlankAnim[i]){
 						mdl.planks[i].anim.time += deltaTime;
@@ -1399,7 +1623,35 @@
 				
 				requestAnimationFrame(OnAnimate);
 			}
-			
+			function Kill(){
+				if(fishActive){
+					mdl.fish.alert = false;
+					mdl.fish.noticed = false;
+					mdl.fish.chargeUp = 0.0;
+					mdl.fish.stamina = 0.0;
+					FishAI.Teleport();
+				}
+				rooms.forEach(function (room){
+					room.parent.remove(room);
+				});
+				specialActive = [false, false, false, false, false, false, false];
+				specialRoomTimer = 12;
+				rooms = [];
+				camPos = new THREE.Vector3(-2, 1, -5.5);
+				cam.position.copy(camPos);
+				startRoom = CreateRoom(0, true);
+				specialObjects[0].position.x = -2.8;
+				specialObjects[1].position.x =  2.8;
+				camRot = [3.14, 0.0, 3.14, 0.0];
+				Generate(startRoom);
+				Generate(startRoom.connected[0].parent);
+				loudness = 0;
+				stamina = 0.0;
+				scene.fog.far = 0;
+				showHand = false;
+				showKey = false;
+				showCrowbar = false;
+			}
 			function FishAI(){
 				let fishT = mdl.fish.scene;
 				fishT.position.lerp(fishPos, deltaTime*12);
@@ -1409,7 +1661,7 @@
 					fishPos.copy(newPos);
 					fishT.position.copy(newPos);
 					mdl.fish.stuckTimer = RandomFRange(12, 40);
-					//console.log("FISH: Teleporting");
+					console.log("FISH: Teleporting");
 				}
 				
 				canBlink = !mdl.fish.noticed;
@@ -1445,7 +1697,7 @@
 					let other = new THREE.Vector3().subVectors(camPos, mdl.fish.head.getWorldPosition(new THREE.Vector3())).normalize();
 					let product = fwd.x * other.x + fwd.y * other.y + fwd.z * other.z;
 				mdl.fish.seesPlayer = (product > -0.3);
-				////console.log(0.95-crouch*0.96);	
+				//console.log(0.95-crouch*0.96);	
 				
 				const distToLast = fishPos.distanceTo(mdl.fish.lastPlayerPosition);
 				//MOVIMENTO
@@ -1471,9 +1723,24 @@
 					let randMax = dist*0.15;
 					if (mdl.fish.stamina <= 0.0)
 						mdl.fish.lastPlayerPosition.copy(new THREE.Vector3(RandomFRange(-randMax, randMax) + camPos.x, 0, RandomFRange(-randMax, randMax) + camPos.z));
-					//console.log("FISH: I heard that");
+					console.log("FISH: I heard that");
 				}
 				var musVol = snd.music[2].getVolume(musVol);
+				var musVolA = snd.music[4].getVolume(musVolA);
+				if (mdl.fish.alert){
+					if (!snd.music[4].isPlaying){
+						snd.music[4].play();
+					}
+					if (musVolA < 0.99)
+						snd.music[4].setVolume(Lerp(musVolA, 0.5, deltaTime*2));
+				}
+				else{
+					if (snd.music[4].isPlaying){
+						snd.music[4].setVolume(Lerp(musVolA, 0.0, deltaTime));
+						if (musVolA < 0.01)
+							snd.music[4].stop();
+					}
+				}
 				if (mdl.fish.noticed){
 					if (!snd.music[2].isPlaying){
 						snd.music[2].play();
@@ -1488,27 +1755,8 @@
 							mdl.fish.lastPlayerPosition.copy(camPos);
 							if (fishPos.distanceTo(camPos) < 1.6){
 								//KILL
-								mdl.fish.alert = false;
-								mdl.fish.noticed = false;
-								mdl.fish.chargeUp = 0.0;
-								mdl.fish.stamina = 0.0;
-								Teleport();
-								rooms.forEach(function (room){
-									room.parent.remove(room);
-								});
-								specialRoomTimer = 12;
-								rooms = [];
-								camPos = new THREE.Vector3(-2, 1, -5.5);
-								cam.position.copy(camPos);
-								startRoom = CreateRoom(0, true);
-								specialObjects[0].position.x = -2.8;
-								specialObjects[1].position.x =  2.8;
-								camRot = [3.14, 0.0, 3.14, 0.0];
-								Generate(startRoom);
-								Generate(startRoom.connected[0].parent);
-								loudness = 0;
 								PlayRandomSound(snd.nex);
-								scene.fog.far = 0;
+								Kill();
 								return;
 							}
 						}
@@ -1535,7 +1783,7 @@
 						mdl.fish.noticed = false;
 						mdl.fish.chargeUp = 0.0;
 						mdl.fish.stamina = 0.0;
-						//console.log("FISH: Lost you");
+						console.log("FISH: Lost you");
 					}
 					if (mdl.fish.chargeUp > 0.0){
 						mdl.fish.chargeUp -= deltaTime;
@@ -1570,7 +1818,7 @@
 						if (mdl.fish.alert){
 							mdl.fish.alert = false;
 							mdl.fish.coolDown = RandomFRange(5, 12)
-							//console.log("FISH: Calm");
+							console.log("FISH: Calm");
 						}
 						else{
 							if (mdl.fish.coolDown <= 0.0){
@@ -1605,6 +1853,8 @@
 				loudness = 0;
 				mdl.fish.coolDown -= deltaTime;
 				mdl.fish.speed = (mdl.fish.stamina > 0.0) ? 16 : (mdl.fish.noticed ? 9 : 5);
+				
+				FishAI.Teleport = Teleport;
 			}
 			
 			function Particles(){
@@ -1625,6 +1875,92 @@
 				}
 			}
 			
+			//MULTIPLAYER
+			function ConnectSocket(wss){
+				return new Promise(function(resolve, reject){
+					function loadDone(x){
+						resolve(x);
+					}
+					if(wss == null){
+						loadDone(false);
+						return;
+					}
+					websocket = new WebSocket(wss);
+					websocket.onerror = function(event){
+						console.log("Error event:", event);
+						loadDone(false);
+						return;
+					};
+					websocket.onopen = function(event){
+						connected = true;
+						console.log("WSS: Connected");
+						
+						let sendFunc = function(){
+							var dataBlock = {
+								type: MSGType.Player,
+								x: camPos.x,
+								y: camPos.z,
+								bodyRot: camRot[0],
+								headRot: camRot[1],
+								speed: curSpeed,
+								crouch: crouch,
+								id: playerID
+							};
+							websocket.send(JSON.stringify(dataBlock));
+							SetTimeout(sendFunc, 20);
+						};
+						
+						websocket.onmessage = function(event){
+							//console.log("Message:", event);
+							var msg = JSON.parse(event.data);
+							switch(msg.type){
+								case MSGType.Player:
+									mdl.her.pos.set(msg.x, 0, msg.y);
+									mdl.her.bodyRot = msg.bodyRot+3.14;
+									mdl.her.headRot = -msg.headRot;
+									mdl.her.curSpeed = msg.speed;
+									mdl.her.crouch = msg.crouch;
+									break;
+								case MSGType.State:
+									state = msg.state;
+									break;
+								case MSGType.Room:
+									/*let room = rooms[msg.roomID];
+									console.log("WSS: Room", msg);
+									if(msg.generated){
+										Generate(room, msg.rng);
+										/*room.doorWays[msg.doorID].position.y = -8;
+										room.generated[msg.doorID] = true;
+										room.canGenerate = false;
+										
+										let decision = CreateRoom(msg.decision, msg.special);
+										decision.position.set(msg.x, 0, msg.y);
+										decision.doorWays[msg.dDoorID].position.y = -8;
+										decision.generated[msg.dDoorID] = true;
+									}*/
+									break;
+								case MSGType.PlayerResponse:
+									console.log("WSS: Player ID", playerID);
+									playerID = msg.id;
+									break;
+								case MSGType.RoomGenerate:
+									Generate(rooms[msg.id], msg.rng);
+									break;
+							}
+							return;
+						};
+						//ADD PLAYER
+						scene.add(mdl.her.scene);
+						mdl.her.actions[0].play();
+						mdl.her.actions[1].play();
+						mdl.her.actions[2].play();
+						
+						sendFunc();
+						loadDone(true);
+					};
+				});
+			}
+			
 			//GENERATE AND DEGENERATE ROOMS
 			function Degenerate(room){
 				for (var j=0; j<room.connected.length; ++j){
@@ -1640,8 +1976,10 @@
 					}
 				}
 				if(room.specialNum > 0){
+					if((room.specialNum === 6) && snd.prologue.isPlaying)
+						snd.prologue.stop();
 					specialActive[room.specialNum] = false;
-					//console.log("ROOM: Depawned special room", room.specialNum);
+					console.log("ROOM: Depawned special room", room.specialNum);
 				}
 				worldColliders.remove(room);
 				let _roomID = room.roomID;
@@ -1649,7 +1987,60 @@
 				rooms.splice(_roomID, 1);
 				UpdateRoomIDs();
 			}
-			function Generate(room){
+			function FindRotation(roomDst, roomSrc, doorDst, doorSrc, doorFwd){
+				if(!doorFwd){
+					doorFwd = new THREE.Vector3();
+					doorDst.getWorldDirection(doorFwd);
+					doorFwd.round();
+					let doorMagnitude = Math.abs(doorDst.position.length());
+					doorFwd.multiplyScalar(doorMagnitude);
+					doorFwd.multiplyScalar(2);
+				}
+				
+					let roomDoorRot = new THREE.Quaternion();
+					let decisionDoorRot = new THREE.Quaternion();
+					doorDst.getWorldQuaternion(roomDoorRot);
+					doorSrc.getWorldQuaternion(decisionDoorRot);
+				roomDoorRot.multiply(decisionDoorRot);
+				roomSrc.quaternion.copy(roomDoorRot);
+				doorFwd.multiplyScalar(2);
+				roomSrc.position.copy(roomDst.position);
+				roomSrc.position.sub(doorFwd);
+					let roomDoorPos = new THREE.Vector3();
+					let decisionDoorPos = new THREE.Vector3();
+					doorDst.getWorldPosition(roomDoorPos);
+					doorSrc.getWorldPosition(decisionDoorPos);
+					let doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
+					for (var k=0; doorDist > 1; ++k){	//BEHOLD, THE MOST UNORTHODOX WAY TO CHECK THE CORRECT ROTATION
+						console.log("ROOM: THREE.js is actin up again", doorDist);
+						roomSrc.rotateY(90*d2r);
+						doorDst.getWorldPosition(roomDoorPos);
+						doorSrc.getWorldPosition(decisionDoorPos);
+						doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
+						if(k > 2){	//PREVENT RECURSION FOR WHATEVER REASON
+							console.log("ROOM: No room for you then");
+							Degenerate(roomSrc);
+							return false;
+						}
+					}
+				return true;
+			}
+			function Generate(room, rng){
+				console.log("ROOM: Generated");
+				if (!rng){
+					rng = Array.from({length: 11}, () => Math.floor(Math.random() * 100));
+					rng.push(100);
+				}
+				let rngIndex = 0;
+				function PickRNG(){
+					let result = rng[rngIndex];
+					result *= (rng.length > 10) ? 0.01 : 0.1;
+					rngIndex = Repeat(rngIndex+1, rng.length-1);
+					return result;
+				}
+				function PickRNGRI(min, max){
+					return Math.floor(PickRNG() * (max - min + 1) + min);
+				}
 				generateLoop:
 					for (var j=0; j<room.doorWays.length; ++j){
 						if ((!room.generated[j])){
@@ -1668,53 +2059,60 @@
 							origin.sub(doorFwd);
 							let hit = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0), 0, 8).intersectObjects(rooms);
 							if (hit.length > 0){
-								//console.log("ROOM: Overlap found, blocking path.");
+								console.log("ROOM: Overlap found, checking if connectable.");
 								overlap = hit[0];
 							}
 							if (!overlap){
 								let decision = 0;
-								if (Math.random() > 0.8)	//ROOM VARIATION CHANCE
-									decision = RandomRange(1, mdl.room.length-1);
+								if (PickRNG() > 0.8)	//ROOM VARIATION CHANCE
+									decision = PickRNGRI(1, mdl.room.length-1);
 								//SPAWNING ROOM
 								let spec = false;//SPECIAL ROOMS
 								let specRoomExists = false;
+								console.log(specialRoomTimer);
 								for (var k=0; k<specialActive.length; ++k)
 									if (specialActive[k]){
-										//console.log("SPECIAL:",k);
+										console.log("SPECIAL:",k);
 										specRoomExists = true;
 										break;
 									}
 								if((scene.fog.far>32) && (specialRoomTimer < 0) && !specRoomExists){
 									decision = 0;
-									while(decision == 0){
-										if ((Math.random() > 0.6) && (state > 3)){
+									//while(decision == 0){
+										if ((PickRNG() > 0.7) && (state > 3)){
 											decision = 4;
 										}
-										else if ((Math.random() > 0.6) && (state != 5)){
+										else if ((PickRNG() > 0.7) && (state != 5)){
 											decision = (state < 6) ? 2 : 3;
 										}
-										else if (Math.random() > 0.6){
+										else if (PickRNG() > 0.7){
 											decision = 1;
 										}
-									}
+										else if (PickRNG() > 0.7){
+											decision = 5;
+										}
+										else{
+											decision = 6;
+										}
+									//}
 									spec = true;
 								}
 								if(spec){
-									//console.log("ROOM: Spawned special room", decision);
+									console.log("ROOM: Spawned special room", decision);
 									specialActive[decision] = true;
 								}
-								decision = CreateRoom(decision, spec);
-								let doorWayNumber = RandomRange(0, decision.doorWays.length-1);
-								let doorWay = decision.doorWays[doorWayNumber];
+								var decisionR = CreateRoom(decision, spec);
+								let doorWayNumber = PickRNGRI(0, decisionR.doorWays.length-1);
+								let doorWay = decisionR.doorWays[doorWayNumber];
 									let roomDoorRot = new THREE.Quaternion();
 									let decisionDoorRot = new THREE.Quaternion();
 									door.getWorldQuaternion(roomDoorRot);
 									doorWay.getWorldQuaternion(decisionDoorRot);
 								roomDoorRot.multiply(decisionDoorRot);
-								decision.quaternion.copy(roomDoorRot);
+								decisionR.quaternion.copy(roomDoorRot);
 								doorFwd.multiplyScalar(2);
-								decision.position.copy(room.position);
-								decision.position.sub(doorFwd);
+								decisionR.position.copy(room.position);
+								decisionR.position.sub(doorFwd);
 									let roomDoorPos = new THREE.Vector3();
 									let decisionDoorPos = new THREE.Vector3();
 									door.getWorldPosition(roomDoorPos);
@@ -1722,65 +2120,136 @@
 									let doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 									for (var k=0; doorDist > 1; ++k){	//BEHOLD, THE MOST UNORTHODOX WAY TO CHECK THE CORRECT ROTATION
 										//console.log("ROOM: THREE.js is actin up again");
-										decision.rotateY(90*d2r);
+										decisionR.rotateY(90*d2r);
 										door.getWorldPosition(roomDoorPos);
 										doorWay.getWorldPosition(decisionDoorPos);
 										doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 										if(k > 4){	//PREVENT RECURSION FOR WHATEVER REASON
-											Degenerate(decision);
 											//console.log("ROOM: No room for you then");
+											Degenerate(decisionR);
 											continue generateLoop;
 										}
 									}
 									
+								
 								//RANDOM PROPS
-								if ((Math.random() > 0.6) && !spec){
-									let arch = mdl.arch[RandomRange(0, mdl.arch.length-1)].clone();
+								if ((PickRNG() > 0.6) && !spec){
+									let arch = mdl.arch[(PickRNG() > 0.4) ? 0 : PickRNGRI(1, mdl.arch.length-1)].clone();
 									arch.position.copy(doorWay.position);
 									arch.quaternion.copy(doorWay.quaternion);
-									if (Math.random() > 0.5)
+									if (PickRNG() > 0.5)
 										arch.quaternion.conjugate();
-									decision.add(arch);
+									decisionR.add(arch);
 								}
 								
 								//DISABLING DOORWAY
-								decision.generated[doorWayNumber] = true;
+								decisionR.generated[doorWayNumber] = true;
 								door.position.y = -8;
 								doorWay.position.y= -8;
 								room.connected[j] = doorWay;
-								decision.connected[doorWayNumber] = door;
+								decisionR.connected[doorWayNumber] = door;
+								
+								if(connected){
+									/*const dataBlock = {
+										//ORIGINAL ROOM
+										type: MSGType.Room,
+										generated: true,
+										roomID: room.roomID,
+										doorID: j,
+										
+										//GENERATED ROOM
+										special: spec,
+										decision: decision,
+										dDoorID: doorWayNumber,
+										qw: decisionR.quaternion.w,
+										qy: decisionR.quaternion.y,
+										x: decisionR.position.x,
+										y: decisionR.position.z,
+									}*/
+									const dataBlock = {
+										//ORIGINAL ROOM
+										type: MSGType.Room,
+										generated: true,
+										x: decisionR.position.x,
+										y: decisionR.position.z,
+									}
+									websocket.send(JSON.stringify(dataBlock));
+								}
+							}
+							else{
+								//CHECK CONNECTABLE
+								while (overlap && !overlap.specialNum){
+									overlap = overlap.parent;
+								}
+								if(overlap){
+									for (var k=0; k<overlap.doorWays.length; k++){
+										if (!overlap.generated[k]){
+											var doorPos = new THREE.Vector3();
+											door.getWorldPosition(doorPos);
+											var overPos = new THREE.Vector3();
+											overlapRoom.doorWays[k].getWorldPosition(overPos);
+											if (doorPos.distanceTo(overlapRoom) < 0.1){
+												console.log("ROOM: Connecting overlap with room.");
+												overlapRoom.generated[k] = true;
+												generated[j] = true;
+												overlapRoom.connected[k] = door;
+												connected[j] = overlapRoom.doorWays[k];
+												overlapRoom.doorWays[k].position.y = -8;
+												door.position.y = -8;
+												break;
+											}
+										}
+									}
+								}
 							}
 						}
 						room.generated[j] = true;
 					}
 					room.canGenerate = false;
 			}
-			function RoomGenerator(){
+			function RoomGenerator(pos){
 				for (var i=0; i<rooms.length; ++i){
-					const dist = rooms[i].position.distanceTo(cam.position);
-					if (dist < 40){
-						if(Actions.Blink && (scene.fog.far<8)){
-							if(dist > 8){
-								if(Math.random() > 0.95){
-									Degenerate(rooms[i]);
-									continue;
+					const dist = rooms[i].position.distanceTo(pos);
+					if (dist < 38){
+						if(!connected){
+							if(Actions.Blink && (scene.fog.far<8)){
+								if(dist > 8){
+									if(Math.random() > 0.95){
+										console.log("ROOM: Degenerated, visus causa");
+										Degenerate(rooms[i]);
+										continue;
+									}
 								}
 							}
-						}
-						else if (rooms[i].canGenerate){
-							let dir = rooms[i].position.clone();
-							dir.sub(cam.position).normalize();
-							let rayInt = new THREE.Raycaster(cam.position, dir, 0, dist).intersectObjects(rooms);
-							if (rayInt.length == 0){
-								//GENERATE
-								Generate(rooms[i]);
+							else if (rooms[i].canGenerate){
+								let dir = rooms[i].position.clone();
+								dir.sub(pos).normalize();
+								let rayInt = new THREE.Raycaster(pos, dir, 0, dist).intersectObjects(rooms);
+								if (rayInt.length == 0)
+									Generate(rooms[i]);
+								else{
+									/*var dirOffs = new THREE.Vector3();
+									dirOffs.addVectors(dir, new THREE.Vector3(fov*0.5*rotFwd[0], 0, fov*0.5*rotFwd[1])).normalize();*/
+									var posOffs = new THREE.Vector3()
+									posOffs.addVectors(pos, new THREE.Vector3(0.5*rotFwd[1], 0, 0.5*rotFwd[0]));
+									rayInt = new THREE.Raycaster(posOffs, dir, 0, dist).intersectObjects(rooms);
+									if(rayInt.length == 0)
+										Generate(rooms[i]);
+									else{
+										//dirOffs.addVectors(dir, new THREE.Vector3(-fov*0.5*rotFwd[0], 0, -fov*0.5*rotFwd[1])).normalize();
+										posOffs.addVectors(pos, new THREE.Vector3(-0.5*rotFwd[1], 0, -0.5*rotFwd[0]));
+										rayInt = new THREE.Raycaster(posOffs, dir, 0, dist).intersectObjects(rooms);
+										if(rayInt.length == 0)
+											Generate(rooms[i]);
+									}
+								}
 							}
-						}
-						if (dist < 12 && !rooms[i].discovered){
-							rooms[i].discovered = true;
-							specialRoomTimer--;
-							if (rooms[i].specialNum > 0)
-								specialRoomTimer = RandomRange(2, 8);
+							if (dist < 12 && !rooms[i].discovered){
+								rooms[i].discovered = true;
+								specialRoomTimer--;
+								if (rooms[i].specialNum > 0)
+									specialRoomTimer = RandomRange(1, 8);
+							}
 						}
 						//SPECIAL PROGRESS
 						switch(rooms[i].specialNum){
@@ -1816,7 +2285,7 @@
 													CameraShake(8);
 													++planksRObject.plank;
 													/*var pl = planksRObject.children[planksRObject.plank].children[0];
-													//console.log(pl);
+													console.log(pl);
 													pl.children[0].material = pl.children[0].material.clone();
 													pl.children[1].material = pl.children[1].material.clone();
 													pl.children[0].material.alphaMap = tex.dust3;
@@ -1826,19 +2295,19 @@
 													mdl.planksR[planksRObject.plank].anim.play();
 													PlayRandomSound(snd.wood);
 													ParticleDust(planksPos, 2, 1, 5, 0.2, 1);
-													//console.log(specialObjects[9]);
+													console.log(specialObjects[9]);
 												}
 												//specialObjects[8].children[specialObjects[8].plank].visible = false;
 												showCrowbar = false;
 												if(planksRObject.plank == 5){
 													CameraShake(8);
-													state = 10;
+													SetState(10);
 													//mdl.doorRigged.offs = -1.5;
 													SetTimeout(function (){
 														planksRObject.parent.remove(planksRObject);
 														mdl.doorRigged.actions[0].stop();
 														mdl.doorRigged.actions[1].play();
-													}, 200);
+													}, 700);
 												}
 											}
 										}
@@ -1866,7 +2335,7 @@
 							case 2:
 								if ((state == 3) && rooms[i].discovered){
 									snd.powerDown.play();
-									state = 4;
+									SetState(4);
 								}
 								break;
 							case 3:
@@ -1878,7 +2347,7 @@
 										showHand = true;
 										specialObjects[4].shownHand = true;
 										if(Actions.Interact){
-											state = 7;
+											SetState(7);
 											specialObjects[4].parent.remove(specialObjects[4]);
 											showHand = false;
 											snd.keys.play();
@@ -1904,7 +2373,7 @@
 											showHand = false;
 											specialObjects[7].parent.remove(specialObjects[7]);
 											snd.crowbar.play();
-											state = 9;
+											SetState(9);
 										}
 									}
 									else if (specialObjects[7].shownHand){
@@ -1921,7 +2390,7 @@
 										if(state == 7){
 											showKey = false;
 											snd.lockerOpen.play();
-											SetTimeout(function(){state = 8;}, 200);
+											SetTimeout(function(){SetState(8);}, 200);
 										}
 										else{
 											if(snd.lockerBudge.isPlaying)
@@ -1944,12 +2413,12 @@
 										specialObjects[6].switchRot[0] = Clamp(specialObjects[6].switchRot[0]-Actions.LookVertical*0.3*Sensitivity, 0, Math.PI);
 										if (specialObjects[6].switchRot[0] < 1.57){
 											specialObjects[6].switchRot[0] = 0.0;
-											state = 5;
+											SetState(5);
 											snd.powerUp.play();
 											specialRoomTimer = 32;
 											SetTimeout(function(){
 												AddFish();
-												state = 6;
+												SetState(6);
 											}, 23000);
 										}
 									}
@@ -1964,10 +2433,55 @@
 								specialObjects[6].switchRot[1] = Lerp(specialObjects[6].switchRot[1], specialObjects[6].switchRot[0], deltaTime*8);
 								specialObjects[6].rotation.x = specialObjects[6].switchRot[1];
 								break;
+							case 5:
+								var tapePos = new THREE.Vector3();
+									specialObjects[10].getWorldPosition(tapePos);
+								var distToTape = tapePos.distanceToSquared(camPos);
+								if(distToTape < 6){
+									showHand = true;
+									specialObjects[10].shownHand = true;
+									if(Actions.Interact){
+										tape = true;
+										specialObjects[10].parent.remove(specialObjects[10]);
+										showHand = false;
+										snd.tape.play();
+									}
+								}
+								else if (specialObjects[10].shownHand){
+									showHand = false;
+									specialObjects[10].shownHand = false;
+								}
+								break;
+							case 6:
+								mdl.tapeDeck.mixer.update(deltaTime);
+								if(tape && !tapePlayed){
+									var tapePos = new THREE.Vector3();
+										specialObjects[11].getWorldPosition(tapePos);
+									var distToTape = tapePos.distanceToSquared(camPos);
+									if(distToTape < 6){
+										showHand = true;
+										specialObjects[11].shownHand = true;
+										if(Actions.Interact){
+											tapePlayed = true;
+											showHand = false;
+											mdl.tapeDeck.anim.play();
+											snd.tapePlay.play();
+											SetTimeout(function(){
+												snd.prologue.play();
+											}, 2000);
+										}
+									}
+									else if (specialObjects[11].shownHand){
+										showHand = false;
+										specialObjects[11].shownHand = false;
+									}
+								}
+								break;
 						}
 					}
-					if (dist > 46){
+					if ((dist > 48) && !connected){
 						//4CHAN USER
+						console.log("ROOM: Degenerated, distantiae causa", dist);
 						Degenerate(rooms[i]);
 					}
 				}
@@ -2065,14 +2579,14 @@
 						if(gamepads[i].axes[0] != gamepadsPrev[i].axes[0])
 							Actions.Horizontal = DeadZone(-gamepads[i].axes[0]);
 						if(DeadZone(gamepads[i].axes[3]) != 0){
-							Actions.LookVertical = DeadZone(-gamepads[i].axes[3])*Sensitivity*50;
-							mousePos[1] = Clamp(mousePos[1]-Actions.LookVertical*0.2, 0, window.innerHeight);
+							Actions.LookVertical = DeadZone(-gamepads[i].axes[3])*Sensitivity*unscaledDelta*2000;
+							mousePos[1] = Clamp(mousePos[1]-Actions.LookVertical, 0, window.innerHeight);
 							gamepadMouse = true;
 							document.body.requestPointerLock();
 						}
 						if(DeadZone(gamepads[i].axes[2]) != 0){
-							Actions.LookHorizontal = DeadZone(-gamepads[i].axes[2])*Sensitivity*50;
-							mousePos[0] = Clamp(mousePos[0]-Actions.LookHorizontal*0.2, 0, window.innerWidth);
+							Actions.LookHorizontal = DeadZone(-gamepads[i].axes[2])*Sensitivity*unscaledDelta*2000;
+							mousePos[0] = Clamp(mousePos[0]-Actions.LookHorizontal, 0, window.innerWidth);
 							gamepadMouse = true;
 							document.body.requestPointerLock();
 						}
@@ -2103,8 +2617,6 @@
 				camRot[1] += Actions.LookVertical*d2r*Sensitivity;
 				camRot[1] = Clamp(camRot[1], -70*d2r, 70*d2r);
 				
-				camTilt[0] = Actions.Tilt*0.2;
-				camTilt[1] = Lerp(camTilt[1], camTilt[0], deltaTime*6);
 				var speed = deltaTime;
 				var chosenSpeed = (Actions.Run && (stamina > 0.8) && !Actions.Crouch) ? runSpeed : walkSpeed;
 				speed *= chosenSpeed-crouch*2;
@@ -2119,7 +2631,11 @@
 					velocity.copy(TestCollision(camPos, velocity, 0.5));
 					camPos.add(velocity);
 					camPos.y = 1-crouch;
-				var curSpeed = velocity.length();
+				curSpeed = velocity.length();
+				
+				camTilt[0] = Actions.Tilt*0.2+Actions.Horizontal*chosenSpeed*0.005;
+				camTilt[1] = Lerp(camTilt[1], camTilt[0], deltaTime*6);
+				
 				if (Actions.Run && curSpeed > 0)
 					stamina = Clamp(stamina-curSpeed*0.1, 0.0, 10.0);
 				else
@@ -2146,6 +2662,16 @@
 				if(Actions.Menu)	//PAUSING
 					ToggleMenu();
 			}
+			function SetState(stnum){
+				if(connected){
+					const dataBlock = {
+						type: MSGType.State,
+						state: stnum
+					}
+					websocket.send(JSON.stringify(dataBlock));
+				}
+				state = stnum;
+			}
 			function State(){
 				stateLerp[1] = Lerp(stateLerp[1], stateLerp[0], deltaTime * stateLerp[2]);
 				//[TARGET, LERP, DELTA]
@@ -2153,15 +2679,16 @@
 					case -1://GAME START
 						setTimeout(function(){
 							if(state == -1)
-								state = 0;
+								SetState(0);
 						}, 100);
 						break;
 					case 0:	//ARRIVAL, SET ELEVATOR
 						snd.gunshot.play();
-						//console.log("STATE: 0 (arrival)");
+						console.log("STATE: 0 (arrival)");
 						snd.elevator.play();
+						scene.fog.far = 0;
 						stateLerp = [0.1, 0.0, 1.0];
-						state = 1;
+						SetState(1);
 						setTimeout(function (){
 							canControl = true;
 						}, 200);
@@ -2172,12 +2699,13 @@
 								stateLerp[1] = 0.0;
 								SetTimeout(function (){
 									snd.elevatorOpen.play();
-									state = 2;
+									SetState(2);
 								}, 2500);
 							}, 1500);
 						}, 12000);
 						break;
 					case 1:	//ELEVATOR RIDE
+						scene.fog.far = Lerp(scene.fog.far, 16.0, deltaTime*0.5);
 						CameraShake(stateLerp[1]);
 						if(stateLerp[1] > 0.0)
 							specialObjects[2].position.y += deltaTime*4;
@@ -2201,7 +2729,7 @@
 								}, 3000);
 							}, 2000);
 							snd.music[1].play();
-							state = 3;
+							SetState(3);
 						}
 						break;
 					case 3:	//DIDN'T DISCOVER ELEVATORS ROOM YET
@@ -2230,7 +2758,7 @@
 						rooms.forEach(function(room){
 							if (room.specialNum === 1){
 								needRoom = room;
-								//console.log(needRoom);
+								console.log(needRoom);
 								room.attach(cam);
 								room.attach(light);
 								room.add(mdl.entrance);
@@ -2247,11 +2775,14 @@
 						if (snd.music[2].isPlaying)
 							snd.music[2].stop();
 						scene.remove(mdl.fish.scene);
-						snd.monster.stop();
-						snd.music[3].play();
-						state = 11;
+						if(snd.monster.isPlaying)
+							snd.monster.stop();
+						if(!snd.music[3].isPlaying)
+							snd.music[3].play();
+						scene.fog.far = 18;
+						SetState(11);
 						SetTimeout(function(){
-							state = 12;
+							SetState(12);
 							scene.fog.far = 0;
 							snd.ambience.stop();
 							SetTimeout(function(){
@@ -2280,13 +2811,15 @@
 						
 						/*camRot[0] = LerpAngle(camRot[0], 0.0, deltaTime);
 						camRot[1] = LerpAngle(camRot[1], 0.0, deltaTime);*/
+						mdl.doorRigged.mixer.update(deltaTime);
+						
 						cam.quaternion.slerp(new THREE.Quaternion(0, 0, 0, 1), deltaTime);
 						camPos.z -= deltaTime*0.5;
 						
-						fov += deltaTime*0.2;
+						fov += deltaTime;
 						
-						scene.fog.far = Lerp(scene.fog.far, 96.0, deltaTime*0.5);
-						rend.toneMappingExposure = Lerp(rend.toneMappingExposure, 1.6, deltaTime*0.5);
+						scene.fog.far += deltaTime*5;
+						rend.toneMappingExposure += deltaTime*0.2;
 						break;
 				}
 			}
@@ -2321,6 +2854,13 @@
 					var hRatioP = img.pauseMenu.width / img.logo.width;
 					var vRatioP = img.pauseMenu.height / img.logo.height;
 					var ratioP	= Math.min(hRatioP, vRatioP);
+					
+					/*ui.save();
+					if((width < 512) || (height < 768)){
+						var scaleRat = Math.min(width / 512, height / 768);
+						ui.scale(scaleRat, scaleRat);
+					}*/
+					
 					ui.drawImage(img.logo, halfWidth-pauseW, halfHeight-pauseH-img.logo.height*ratioP+48, img.logo.width*ratioP, img.logo.height*ratioP);
 					
 					ui.drawImage(img.pauseMenu, halfWidth-pauseW, halfHeight-pauseH+60);
@@ -2348,8 +2888,9 @@
 						if(buttonOn && Actions.Interact){
 							Graphics.Bloom = !Graphics.Bloom;
 							SetCookie("Graphics.Bloom", Graphics.Bloom, 365);
+							let saoIndex = 1; for (var i=0; i<composer.passes.length; ++i) if (typeof composer.passes[i] === "SAOPass"){ saoIndex = i+1; break; }
 							if (Graphics.Bloom)
-								composer.insertPass(bloomPass, 3);
+								composer.insertPass(bloomPass, saoIndex);
 							else
 								composer.removePass(bloomPass);
 						}
@@ -2378,8 +2919,10 @@
 						if(buttonOn && Actions.Interact){
 							Graphics.MotionBlur = !Graphics.MotionBlur;
 							SetCookie("Graphics.MotionBlur", Graphics.MotionBlur, 365);
+							console.log(composer.passes);
+							let bloomIndex = 1; for (var i=0; i<composer.passes.length; ++i) if (typeof composer.passes[i] === "UnrealBloomPass"){ bloomIndex = i+1; break; }
 							if (Graphics.MotionBlur)
-								composer.insertPass(afterimagePass, 4);
+								composer.insertPass(afterimagePass, bloomIndex);
 							else
 								composer.removePass(afterimagePass);
 						}
@@ -2393,8 +2936,9 @@
 						if(buttonOn && Actions.Interact){
 							Graphics.SAO = !Graphics.SAO;
 							SetCookie("Graphics.SAO", Graphics.SAO, 365);
+							let fxaaIndex = 1; for (var i=0; i<composer.passes.length; ++i) if (typeof composer.passes[i] === "ShaderPass"){ fxaaIndex = i+1; break; }
 							if (Graphics.SAO)
-								composer.insertPass(saoPass, 2);
+								composer.insertPass(saoPass, fxaaIndex);
 							else
 								composer.removePass(saoPass);
 						}
@@ -2410,6 +2954,18 @@
 							SetCookie("Graphics.Materials", Graphics.Materials, 365);
 							window.alert("You need to refresh the page for this to take effect.");
 						}
+					ui.globalAlpha = 1.0;
+					ui.drawStroked("FULLSCREEN:", buttonX+24, halfHeight+140);
+						buttonOn = MouseInRange(buttonX, halfHeight+108, buttonX+446, halfHeight+156);
+						ui.globalAlpha = buttonOn ? 0.8 : 1.0;
+						ui.drawImage(img.checkBox, buttonX+358, halfHeight+108);
+						if(document.fullscreenElement)
+							ui.drawImage(img.check, buttonX+358, halfHeight+108);
+						if(buttonOn && Actions.Interact)
+							if(document.fullscreenElement)
+								document.exitFullscreen();
+							else
+								document.body.requestFullscreen();
 					ui.globalAlpha = 1.0;
 					ui.drawStroked("SENSITIVITY:", buttonX+24, halfHeight+188);
 						buttonOn = MouseInRange(buttonX, halfHeight+156, buttonX+446, halfHeight+204);
@@ -2455,7 +3011,7 @@
 						if(buttonOn && Actions.Interact)
 							window.close();
 					ui.globalAlpha = 1.0;
-					
+					//ui.restore();
 					if (gamepadMouse)
 						ui.drawImage(img.check, mousePos[0]-44, mousePos[1]-24);
 				}
@@ -2489,7 +3045,7 @@
 				}
 				Object.entries(snd).forEach(function(_snd){
 					if(_snd[1].length){
-						//console.log(_snd[1]);
+						console.log(_snd[1]);
 						for(var i=1; i<_snd[1].length; ++i){
 							PauseUnpause(_snd[1][i]);
 						}
@@ -2505,7 +3061,9 @@
 			cam.quaternion.setFromEuler(new THREE.Euler(camRot[3], camRot[2], camTilt[1], 'YXZ'));
 			ui.font = "32px gameFont";
 			
+			//setTimeout(OnAnimate, connected ? 1000 : 10);
 			OnAnimate();
+			SetTimeout(PlayAmbient, ambTimer);
 			//AddFish();
 		}
 		function PlayRandomSound(sndArray, volume=1.0){
@@ -2529,6 +3087,14 @@
 			}
 			Actions.Interact = true;
 		});
+		if(!Release){
+			document.addEventListener("keydown", function(event){
+				if (event.keyCode === 77){
+					wssUrl = window.prompt("Enter WSS adress:","wss://127.0.0.1:8000");
+					window.dispatchEvent(new Event("click"));
+				}
+			});
+		}
 		function DrawDisclaimer(prg, name){
 			ui.clearRect(0, 0, window.innerWidth, window.innerHeight);
 			/*var hRatio = width / img.logo.width;
@@ -2593,12 +3159,15 @@
 			if ('serviceWorker' in navigator) {
 				navigator.serviceWorker.register('./sw.js')
 				.then(function(registration) {
-					//console.log('Registration successful, scope is:', registration.scope);
+					console.log('Registration successful, scope is:', registration.scope);
 				})
 				.catch(function(error) {
-					//console.log('Service worker registration failed, error:', error);
+					console.log('Service worker registration failed, error:', error);
 				});
 			}
+		});
+		window.addEventListener("beforeunload", function(){
+			websocket.close();
 		});
 		document.addEventListener("pointerlockchange", function(){
 			if ((document.pointerLockElement == null) && !fixDelta && !paused){
