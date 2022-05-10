@@ -83,7 +83,7 @@
 		
 		var loaded = false;
 		var loadProgress = 0;
-		var loadAmount = 184;
+		var loadAmount = 185;
 		var loadMultiplier = 160/loadAmount;
 	
 		const uiCanvas = document.createElement("canvas");
@@ -100,6 +100,8 @@
 		var rooms = [];
 		var specialRoomTimer = 12;
 		var stats;
+		
+		var arrowHelper;
 		
 		var ambTimer = 12000;
 		var deltaTime = 0.0, last = 0.0, timeScale = 1, unscaledDelta = 0.0, fixDelta = false;
@@ -224,6 +226,11 @@
 		function Repeat(t, length){
 			return t - Math.floor(t / length) * length;
 		}
+		function Unzero(val){
+			if (val == 0)
+				return 1;
+			return val;
+		}
 		
 		var timeOuts = [];
 		function SetTimeout(_func, _delay){
@@ -272,7 +279,7 @@
 			
 			listener.setMasterVolume(Volume);
 			
-			console.log(cam);
+			//console.log(cam);
 			
 			const ambLight = new THREE.AmbientLight(0x0);
 			scene.add(ambLight);
@@ -290,7 +297,7 @@
 					xhttp.responseType = "arraybuffer";
 					
 					xhttp.onload = function(){
-						console.log("LOADED RESOURCES");
+						//console.log("LOADED RESOURCES");
 						resourceFile = this.response;
 						let pos = 0;
 						let dv = new DataView(resourceFile);
@@ -299,11 +306,11 @@
 							let length = dv.getUint32(pos, true);
 							pos += 4;
 							result.push(resourceFile.slice(pos, pos+length));
-							//console.log("LENGTH: ", length);
+							////console.log("LENGTH: ", length);
 							pos += length;
 						}
-						console.log("PARSED", result.length, "RESOURCES");
-						console.log(result);
+						//console.log("PARSED", result.length, "RESOURCES");
+						//console.log(result);
 						resolve(result);
 					}
 					xhttp.send();
@@ -342,7 +349,7 @@
 				vignette:	await LoadImage("./GFX/vignette.png")
 			}
 			
-			console.log("Loading textures...");
+			//console.log("Loading textures...");
 			function LoadTexture(fname, mattex){
 				return new Promise(function(resolve, reject){
 					function loadDone(x){
@@ -733,7 +740,7 @@
 			};
 			DrawDisclaimer(true);
 			
-			console.log("Loading models.");
+			//console.log("Loading models.");
 			function LoadGLTF(fname, materials){
 				return new Promise(function(resolve, reject){
 					function loadDone(x){
@@ -759,7 +766,7 @@
 							//mesh.scene.castShadow = true;
 							//mesh.scene.receiveShadows = true;
 						}
-						console.log(mesh);
+						//console.log(mesh);
 						loadDone(mesh.animations.length > 0 ? mesh : mesh.scene);
 						DrawDisclaimer(true, fname);
 					});
@@ -830,7 +837,7 @@
 			/*const planksObject = new THREE.Object3D();
 			mdl.planks.forEach(function(plank){
 				/*plank.mixer = new THREE.AnimationMixer(plank.scene);
-				console.log(plank);
+				//console.log(plank);
 				plank.anim = plank.mixer.clipAction(plank.animations[0]),
 				plank.scene.children[0].children[0].material = mat.metal;
 				plank.scene.children[0].children[1].material = mat.wood;
@@ -840,11 +847,11 @@
 			const planksRObject = new THREE.Object3D();
 			mdl.planksR.forEach(function(plank){
 				plank.mixer = new THREE.AnimationMixer(plank.scene);
-				console.log(plank);
+				//console.log(plank);
 				plank.anim = plank.mixer.clipAction(plank.animations[0]);
 				plank.anim.loop = THREE.LoopOnce;
 				plank.anim.clampWhenFinished = true;
-				console.log(plank);
+				//console.log(plank);
 				plank.scene.children[1].children[0].material = mat.metal;
 				plank.scene.children[1].children[1].material = mat.wood;
 				plank.scene.position.z += 3;
@@ -901,6 +908,12 @@
 			mdl.tapeDeck.scene.children[0].children[1].children[3].material = mat.metal;
 			mdl.tapeDeck.scene.children[0].children[1].children[4].material = mat.metal;
 			mdl.tapeDeck.scene.children[0].children[1].children[5].material = mat.tape;
+			mdl.tapeDeck.scene.children[0].children[1].children[0].frustumCulled = false;
+			mdl.tapeDeck.scene.children[0].children[1].children[1].frustumCulled = false;
+			mdl.tapeDeck.scene.children[0].children[1].children[2].frustumCulled = false;
+			mdl.tapeDeck.scene.children[0].children[1].children[3].frustumCulled = false;
+			mdl.tapeDeck.scene.children[0].children[1].children[4].frustumCulled = false;
+			mdl.tapeDeck.scene.children[0].children[1].children[5].frustumCulled = false;
 			mdl.tapeDeck.mixer = new THREE.AnimationMixer(mdl.tapeDeck.scene);
 			mdl.tapeDeck.anim = mdl.tapeDeck.mixer.clipAction(mdl.tapeDeck.animations[0]);
 			mdl.tapeDeck.anim.loop = THREE.LoopOnce;
@@ -978,12 +991,12 @@
 				elevator: await LoadSound("./SFX/elevator.mp3"),
 				elevatorOpen: await LoadSound("./SFX/elevatorOpen.mp3", 4, 10),
 				fishstep: [	0,
-							await LoadSound("./SFX/fishstep-01.mp3", 4, 10), 
-							await LoadSound("./SFX/fishstep-02.mp3", 4, 10), 
-							await LoadSound("./SFX/fishstep-03.mp3", 4, 10), 
-							await LoadSound("./SFX/fishstep-04.mp3", 4, 10), 
-							await LoadSound("./SFX/fishstep-05.mp3", 4, 10), 
-							await LoadSound("./SFX/fishstep-06.mp3", 4, 10)],
+							await LoadSound("./SFX/fishstep-01.mp3", 2, 8), 
+							await LoadSound("./SFX/fishstep-02.mp3", 2, 8), 
+							await LoadSound("./SFX/fishstep-03.mp3", 2, 8), 
+							await LoadSound("./SFX/fishstep-04.mp3", 2, 8), 
+							await LoadSound("./SFX/fishstep-05.mp3", 2, 8), 
+							await LoadSound("./SFX/fishstep-06.mp3", 2, 8)],
 				gunshot:	await LoadSound("./SFX/gunshot.mp3"),
 				horror: [	0,
 							await LoadSound("./SFX/horror-01.mp3"), 
@@ -993,7 +1006,7 @@
 				keys: await LoadSound("./SFX/keys.mp3"),
 				lockerOpen:		await LoadSound("./SFX/lockerOpen.mp3", 4, 14),
 				lockerBudge:	await LoadSound("./SFX/lockerBudge.mp3", 4, 14),
-				monster:		await LoadSound("./SFX/monster.mp3", 4, 12),
+				monster:		await LoadSound("./SFX/monster.mp3", 2, 10),
 				nex: [ 0,
 						await LoadSound("./SFX/nex-01.mp3"), 
 						await LoadSound("./SFX/nex-02.mp3"), 
@@ -1032,7 +1045,8 @@
 					await LoadSound("./SFX/music-exit.mp3"),
 					await LoadSound("./SFX/music-run.mp3", 16, 48),
 					await LoadSound("./SFX/music-realization.mp3"),
-					await LoadSound("./SFX/music-silencio.mp3", 8, 24),]
+					await LoadSound("./SFX/music-silencio.mp3", 8, 24),
+					await LoadSound("./SFX/music-intense.mp3", 0.1, 3),]
 			};
 			mdl.doorRigged.scene.add(snd.doorBudge);
 			mdl.doorRigged.scene.add(snd.wood[1]);
@@ -1048,6 +1062,16 @@
 			mdl.fish.scene.add(snd.fishstep[5]);
 			mdl.fish.scene.add(snd.fishstep[6]);
 			
+			const fishFilter = listener.context.createBiquadFilter();
+			fishFilter.type = "lowpass";
+			snd.fishstep[1].setFilter(fishFilter);
+			snd.fishstep[2].setFilter(fishFilter);
+			snd.fishstep[3].setFilter(fishFilter);
+			snd.fishstep[4].setFilter(fishFilter);
+			snd.fishstep[5].setFilter(fishFilter);
+			snd.fishstep[6].setFilter(fishFilter);
+			
+			snd.monster.setFilter(fishFilter);
 			snd.monster.loop = true;
 			
 			snd.ambience.loop = true;
@@ -1059,8 +1083,10 @@
 			
 			snd.music[2].loop = true;
 			snd.music[4].loop = true;
+			snd.music[5].loop = true;
 			mdl.fish.scene.add(snd.music[2]);
 			mdl.fish.scene.add(snd.music[4]);
+			mdl.fish.scene.add(snd.music[5]);
 			
 			/*const reverb = listener.context.createConvolver();
 			listener.buffer = snd.sus[1].buffer;
@@ -1076,6 +1102,7 @@
 				mdl.fish.scene.position.copy(fishPos);
 				scene.add(mdl.fish.scene);
 				fishActive = true;
+				snd.music[5].play();
 			}
 			
 			rend.autoClear = false;
@@ -1117,7 +1144,7 @@
 			const composer = new EffectComposer(rend);
 			
 			const renderPass = new RenderPass(scene, cam);
-			console.log(composer.passes);
+			//console.log(composer.passes);
 			composer.addPass(renderPass);
 			
 			//FXAA	1
@@ -1155,7 +1182,7 @@
 			/*filmPass.fsQuad.onBeforeRender = function(){
 				filmPass.material.uniforms["nIntensity"] = 0.0;
 				filmPass.material.uniformsNeedUpdate = true;
-				console.log("Hello");
+				//console.log("Hello");
 			}*/
 			
 			//BLUR
@@ -1227,7 +1254,7 @@
 					case 74: 
 						if (!Release){
 							ParticleDust(camPos, 6, 0.06, 0.1, 3, 1, 0x222222);
-							console.log(specialObjects[9]);
+							//console.log(specialObjects[9]);
 						}
 						break;
 					case 75: 
@@ -1253,8 +1280,8 @@
 				}
 			}
 			document.onmousemove = function(event){
-				Actions.LookVertical = -event.movementY*unscaledDelta*64;
-				Actions.LookHorizontal = -event.movementX*unscaledDelta*64;
+				Actions.LookVertical = -event.movementY*0.6;
+				Actions.LookHorizontal = -event.movementX*0.6;
 				mousePos = [event.clientX, event.clientY];
 				gamepadMouse = false;
 			}
@@ -1272,14 +1299,14 @@
 			}
 			
 			
-			console.log("Scene initialized.");
+			//console.log("Scene initialized.");
 			
 			const worldColliders = new THREE.Object3D();
 			scene.add(worldColliders);
 			
 			if(wssUrl !== null)
 				connected = await ConnectSocket(wssUrl);
-			console.log("WSS: Operations complete");
+			//console.log("WSS: Operations complete");
 			
 			function CreateRoom(num, special = false){
 				let tempRoom = special ? mdl.specialRoom[num].clone() : mdl.room[num].clone();
@@ -1446,13 +1473,13 @@
 						}
 						break;
 				}
-				console.log(tempRoom);*/
+				//console.log(tempRoom);*/
 				
 				
 				rooms.push(tempRoom);
 				worldColliders.add(tempRoom);
 				
-				//console.log("ROOM: Created room:", num, tempRoom);
+				////console.log("ROOM: Created room:", num, tempRoom);
 				
 				return tempRoom;
 			}
@@ -1493,7 +1520,7 @@
 				scene.add(specialObjects[9]);
 			}
 			function PlayAmbient(){
-				console.log("Playing ambient sound");
+				//console.log("Playing ambient sound");
 				let ambObj = new THREE.Object3D();
 				ambObj.position.set(camPos.x+RandomFRange(-24, 24), 0, camPos.z+RandomFRange(-24, 24));
 				scene.add(ambObj);
@@ -1511,15 +1538,15 @@
 						last = now;
 						fixDelta = false;
 					}
-					unscaledDelta = Math.min(1, (now - last) * 0.001);
-					deltaTime = unscaledDelta * (connected ? 1 : timeScale);
+					unscaledDelta = Clamp(Math.min(1, (now - last) * 0.001));
+					deltaTime = unscaledDelta * (connected ? 1 : timeScale), 0, 1;
 					last = now;
 				}
 				timeOuts.forEach(function(timeOut){
 					timeOut.timer -= deltaTime*1000;
 					if (timeOut.timer <= 0.0){
 						timeOut.func();
-						//console.log("TIMEOUT: Executing function");
+						////console.log("TIMEOUT: Executing function");
 						timeOuts.splice(timeOut.id, 1);
 						for(var i=0; i<timeOuts.length; ++i){
 							timeOuts[i].id = i;
@@ -1546,7 +1573,7 @@
 					mdl.her.actions[2].weight = mdl.her.crouch;
 				}
 				
-				if(fishActive)
+				if(fishActive && (timeScale != 0))
 					FishAI();
 					
 				
@@ -1578,9 +1605,9 @@
 					else
 						stamina -= _bl ? deltaTime : 0;
 				}
-				brVol = (Actions.Blink && canBlink) ? Lerp(brVol, 0.3, deltaTime) : Lerp(brVol, 0.0, deltaTime*6);
+				brVol = (Actions.Blink && canBlink) ? Lerp(brVol, 0.5, deltaTime) : Lerp(brVol, 0.0, deltaTime*6);
 				snd.breathing.setVolume(brVol);
-				snd.breathingHeavy.setVolume(Clamp(Clamp(Math.abs(stamina*0.2-2), 0.0, 1.0)-brVol*4, 0.0, 1.0));
+				snd.breathingHeavy.setVolume(Clamp(Clamp(Math.abs(stamina*0.1-1), 0.0, 1.0)-brVol*2, 0.0, 0.4));
 				
 				if (state < 10){
 					RoomGenerator(cam.position);
@@ -1631,6 +1658,8 @@
 					mdl.fish.stamina = 0.0;
 					FishAI.Teleport();
 				}
+				if(snd.prologue.isPlaying)
+					snd.prologue.stop();
 				rooms.forEach(function (room){
 					room.parent.remove(room);
 				});
@@ -1653,22 +1682,22 @@
 				showCrowbar = false;
 			}
 			function FishAI(){
-				let fishT = mdl.fish.scene;
+				var fishT = mdl.fish.scene;
 				fishT.position.lerp(fishPos, deltaTime*12);
 				
 				function Teleport(){
-					let newPos = new THREE.Vector3(camPos.x + Math.round(rotFwd[0])*64, 0, camPos.z + Math.round(rotFwd[1])*64);
+					var newPos = new THREE.Vector3(camPos.x + Math.round(rotFwd[0])*64, 0, camPos.z + Math.round(rotFwd[1])*64);
 					fishPos.copy(newPos);
 					fishT.position.copy(newPos);
 					mdl.fish.stuckTimer = RandomFRange(12, 40);
-					console.log("FISH: Teleporting");
+					//console.log("FISH: Teleporting");
 				}
 				
 				canBlink = !mdl.fish.noticed;
 				
 				//GET SPEED
-				let curMove = new THREE.Vector3().subVectors(fishT.position, mdl.fish.prevPos);
-				mdl.fish.curSpeed = curMove.length() * deltaTime * 1000;
+				var curMove = new THREE.Vector3().subVectors(fishT.position, mdl.fish.prevPos);
+				mdl.fish.curSpeed = curMove.length()/Unzero(deltaTime)*0.3;
 				mdl.fish.prevPos.copy(fishT.position);
 				
 				//ANIMATIONS
@@ -1689,22 +1718,43 @@
 				}
 				//VISIBILITY OF THE PLAYER
 				const dist = fishPos.distanceTo(camPos);
-					let dir = new THREE.Vector3().subVectors(camPos, fishPos).normalize();
-					let dirInv = dir.clone().negate();
-				mdl.fish.blocked = ((new THREE.Raycaster(mdl.fish.head.position, dir, 0, dist).intersectObjects(worldColliders.children).length > 0) || (new THREE.Raycaster(camPos, dirInv, 0, dist).intersectObjects(worldColliders.children).length > 0));
-					let fwd = new THREE.Vector3();
+					var dir = new THREE.Vector3().subVectors(camPos, fishPos).normalize();
+					var dirInv = dir.clone().negate();
+					var headPos = new THREE.Vector3();
+					mdl.fish.head.getWorldPosition(headPos);
+					if(!Release){
+						if(arrowHelper)
+							scene.remove(arrowHelper);
+						arrowHelper = new THREE.ArrowHelper(dir, headPos, dist);
+						scene.add(arrowHelper);
+					}
+					var ray = new THREE.Raycaster(headPos, dir, 0, dist).intersectObjects(worldColliders.children);
+					var rayInv = new THREE.Raycaster(camPos, dirInv, 0, dist).intersectObjects(worldColliders.children);
+				mdl.fish.blocked = ((ray.length > 0) || (rayInv.length > 0));
+					var fwd = new THREE.Vector3();
 					mdl.fish.head.getWorldDirection(fwd);
-					let other = new THREE.Vector3().subVectors(camPos, mdl.fish.head.getWorldPosition(new THREE.Vector3())).normalize();
-					let product = fwd.x * other.x + fwd.y * other.y + fwd.z * other.z;
+					var other = new THREE.Vector3().subVectors(camPos, mdl.fish.head.getWorldPosition(new THREE.Vector3())).normalize();
+					var product = fwd.x * other.x + fwd.y * other.y + fwd.z * other.z;
 				mdl.fish.seesPlayer = (product > -0.3);
-				//console.log(0.95-crouch*0.96);	
+				////console.log(0.95-crouch*0.96);	
+				
+				//SELF SOUNDS
+				const selfPos = (ray.length > 0) ? ray[0].point : fishT.position;
+				if(rayInv.length > 0){
+					//var thickness = fishT.position.distanceTo(rayInv[0].point);
+					fishFilter.frequency.value = Math.abs(Clamp(dist*50-4000, -4000, -30));
+				}
+				else{
+					fishFilter.frequency.value = 6000;
+				}
+				//console.log(fishFilter.frequency.value);
 				
 				const distToLast = fishPos.distanceTo(mdl.fish.lastPlayerPosition);
 				//MOVIMENTO
 				if ((distToLast > 1.5) && (mdl.fish.chargeUp <= 0.0)){
-					let fishRot = LerpAngle(fishT.rotation.y, Math.atan2(mdl.fish.lastPlayerPosition.x - fishT.position.x, mdl.fish.lastPlayerPosition.z - fishT.position.z), deltaTime*6);
+					var fishRot = LerpAngle(fishT.rotation.y, Math.atan2(mdl.fish.lastPlayerPosition.x - fishT.position.x, mdl.fish.lastPlayerPosition.z - fishT.position.z), deltaTime*6);
 					fishT.rotation.y = fishRot;
-					let fishVel = new THREE.Vector3();
+					var fishVel = new THREE.Vector3();
 					fishT.getWorldDirection(fishVel);
 					fishVel.y = 0;
 					fishVel.multiplyScalar(deltaTime*mdl.fish.speed);
@@ -1723,7 +1773,7 @@
 					let randMax = dist*0.15;
 					if (mdl.fish.stamina <= 0.0)
 						mdl.fish.lastPlayerPosition.copy(new THREE.Vector3(RandomFRange(-randMax, randMax) + camPos.x, 0, RandomFRange(-randMax, randMax) + camPos.z));
-					console.log("FISH: I heard that");
+					//console.log("FISH: I heard that");
 				}
 				var musVol = snd.music[2].getVolume(musVol);
 				var musVolA = snd.music[4].getVolume(musVolA);
@@ -1783,7 +1833,7 @@
 						mdl.fish.noticed = false;
 						mdl.fish.chargeUp = 0.0;
 						mdl.fish.stamina = 0.0;
-						console.log("FISH: Lost you");
+						//console.log("FISH: Lost you");
 					}
 					if (mdl.fish.chargeUp > 0.0){
 						mdl.fish.chargeUp -= deltaTime;
@@ -1818,7 +1868,7 @@
 						if (mdl.fish.alert){
 							mdl.fish.alert = false;
 							mdl.fish.coolDown = RandomFRange(5, 12)
-							console.log("FISH: Calm");
+							//console.log("FISH: Calm");
 						}
 						else{
 							if (mdl.fish.coolDown <= 0.0){
@@ -1887,13 +1937,13 @@
 					}
 					websocket = new WebSocket(wss);
 					websocket.onerror = function(event){
-						console.log("Error event:", event);
+						//console.log("Error event:", event);
 						loadDone(false);
 						return;
 					};
 					websocket.onopen = function(event){
 						connected = true;
-						console.log("WSS: Connected");
+						//console.log("WSS: Connected");
 						
 						let sendFunc = function(){
 							var dataBlock = {
@@ -1911,7 +1961,7 @@
 						};
 						
 						websocket.onmessage = function(event){
-							//console.log("Message:", event);
+							////console.log("Message:", event);
 							var msg = JSON.parse(event.data);
 							switch(msg.type){
 								case MSGType.Player:
@@ -1926,7 +1976,7 @@
 									break;
 								case MSGType.Room:
 									/*let room = rooms[msg.roomID];
-									console.log("WSS: Room", msg);
+									//console.log("WSS: Room", msg);
 									if(msg.generated){
 										Generate(room, msg.rng);
 										/*room.doorWays[msg.doorID].position.y = -8;
@@ -1940,7 +1990,7 @@
 									}*/
 									break;
 								case MSGType.PlayerResponse:
-									console.log("WSS: Player ID", playerID);
+									//console.log("WSS: Player ID", playerID);
 									playerID = msg.id;
 									break;
 								case MSGType.RoomGenerate:
@@ -1979,7 +2029,7 @@
 					if((room.specialNum === 6) && snd.prologue.isPlaying)
 						snd.prologue.stop();
 					specialActive[room.specialNum] = false;
-					console.log("ROOM: Depawned special room", room.specialNum);
+					//console.log("ROOM: Depawned special room", room.specialNum);
 				}
 				worldColliders.remove(room);
 				let _roomID = room.roomID;
@@ -2012,13 +2062,13 @@
 					doorSrc.getWorldPosition(decisionDoorPos);
 					let doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 					for (var k=0; doorDist > 1; ++k){	//BEHOLD, THE MOST UNORTHODOX WAY TO CHECK THE CORRECT ROTATION
-						console.log("ROOM: THREE.js is actin up again", doorDist);
+						//console.log("ROOM: THREE.js is actin up again", doorDist);
 						roomSrc.rotateY(90*d2r);
 						doorDst.getWorldPosition(roomDoorPos);
 						doorSrc.getWorldPosition(decisionDoorPos);
 						doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 						if(k > 2){	//PREVENT RECURSION FOR WHATEVER REASON
-							console.log("ROOM: No room for you then");
+							//console.log("ROOM: No room for you then");
 							Degenerate(roomSrc);
 							return false;
 						}
@@ -2026,7 +2076,7 @@
 				return true;
 			}
 			function Generate(room, rng){
-				console.log("ROOM: Generated");
+				//console.log("ROOM: Generated");
 				if (!rng){
 					rng = Array.from({length: 11}, () => Math.floor(Math.random() * 100));
 					rng.push(100);
@@ -2059,7 +2109,7 @@
 							origin.sub(doorFwd);
 							let hit = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0), 0, 8).intersectObjects(rooms);
 							if (hit.length > 0){
-								console.log("ROOM: Overlap found, checking if connectable.");
+								//console.log("ROOM: Overlap found, checking if connectable.");
 								overlap = hit[0];
 							}
 							if (!overlap){
@@ -2069,10 +2119,10 @@
 								//SPAWNING ROOM
 								let spec = false;//SPECIAL ROOMS
 								let specRoomExists = false;
-								console.log(specialRoomTimer);
+								//console.log(specialRoomTimer);
 								for (var k=0; k<specialActive.length; ++k)
 									if (specialActive[k]){
-										console.log("SPECIAL:",k);
+										//console.log("SPECIAL:",k);
 										specRoomExists = true;
 										break;
 									}
@@ -2098,7 +2148,7 @@
 									spec = true;
 								}
 								if(spec){
-									console.log("ROOM: Spawned special room", decision);
+									//console.log("ROOM: Spawned special room", decision);
 									specialActive[decision] = true;
 								}
 								var decisionR = CreateRoom(decision, spec);
@@ -2119,13 +2169,13 @@
 									doorWay.getWorldPosition(decisionDoorPos);
 									let doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 									for (var k=0; doorDist > 1; ++k){	//BEHOLD, THE MOST UNORTHODOX WAY TO CHECK THE CORRECT ROTATION
-										//console.log("ROOM: THREE.js is actin up again");
+										////console.log("ROOM: THREE.js is actin up again");
 										decisionR.rotateY(90*d2r);
 										door.getWorldPosition(roomDoorPos);
 										doorWay.getWorldPosition(decisionDoorPos);
 										doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 										if(k > 4){	//PREVENT RECURSION FOR WHATEVER REASON
-											//console.log("ROOM: No room for you then");
+											////console.log("ROOM: No room for you then");
 											Degenerate(decisionR);
 											continue generateLoop;
 										}
@@ -2149,23 +2199,10 @@
 								room.connected[j] = doorWay;
 								decisionR.connected[doorWayNumber] = door;
 								
+								if((room.specialNum === 3) && (state > 4))
+									ParticleDust(room.position, 6, 0.06, 0.1, 3, 1, 0x222222);
+								
 								if(connected){
-									/*const dataBlock = {
-										//ORIGINAL ROOM
-										type: MSGType.Room,
-										generated: true,
-										roomID: room.roomID,
-										doorID: j,
-										
-										//GENERATED ROOM
-										special: spec,
-										decision: decision,
-										dDoorID: doorWayNumber,
-										qw: decisionR.quaternion.w,
-										qy: decisionR.quaternion.y,
-										x: decisionR.position.x,
-										y: decisionR.position.z,
-									}*/
 									const dataBlock = {
 										//ORIGINAL ROOM
 										type: MSGType.Room,
@@ -2189,7 +2226,7 @@
 											var overPos = new THREE.Vector3();
 											overlapRoom.doorWays[k].getWorldPosition(overPos);
 											if (doorPos.distanceTo(overlapRoom) < 0.1){
-												console.log("ROOM: Connecting overlap with room.");
+												//console.log("ROOM: Connecting overlap with room.");
 												overlapRoom.generated[k] = true;
 												generated[j] = true;
 												overlapRoom.connected[k] = door;
@@ -2215,7 +2252,7 @@
 							if(Actions.Blink && (scene.fog.far<8)){
 								if(dist > 8){
 									if(Math.random() > 0.95){
-										console.log("ROOM: Degenerated, visus causa");
+										//console.log("ROOM: Degenerated, visus causa");
 										Degenerate(rooms[i]);
 										continue;
 									}
@@ -2285,7 +2322,7 @@
 													CameraShake(8);
 													++planksRObject.plank;
 													/*var pl = planksRObject.children[planksRObject.plank].children[0];
-													console.log(pl);
+													//console.log(pl);
 													pl.children[0].material = pl.children[0].material.clone();
 													pl.children[1].material = pl.children[1].material.clone();
 													pl.children[0].material.alphaMap = tex.dust3;
@@ -2295,7 +2332,7 @@
 													mdl.planksR[planksRObject.plank].anim.play();
 													PlayRandomSound(snd.wood);
 													ParticleDust(planksPos, 2, 1, 5, 0.2, 1);
-													console.log(specialObjects[9]);
+													//console.log(specialObjects[9]);
 												}
 												//specialObjects[8].children[specialObjects[8].plank].visible = false;
 												showCrowbar = false;
@@ -2437,7 +2474,7 @@
 								var tapePos = new THREE.Vector3();
 									specialObjects[10].getWorldPosition(tapePos);
 								var distToTape = tapePos.distanceToSquared(camPos);
-								if(distToTape < 6){
+								if(distToTape < 10){
 									showHand = true;
 									specialObjects[10].shownHand = true;
 									if(Actions.Interact){
@@ -2481,7 +2518,7 @@
 					}
 					if ((dist > 48) && !connected){
 						//4CHAN USER
-						console.log("ROOM: Degenerated, distantiae causa", dist);
+						//console.log("ROOM: Degenerated, distantiae causa", dist);
 						Degenerate(rooms[i]);
 					}
 				}
@@ -2514,6 +2551,7 @@
 					});
 				});*/
 				//RAYCAST COLLISION
+				size * unscaledDelta * 1000;
 				if((vel.x == 0) && (vel.z == 0))
 					return vel;
 				let rayIntX, rayIntZ;
@@ -2637,7 +2675,7 @@
 				camTilt[1] = Lerp(camTilt[1], camTilt[0], deltaTime*6);
 				
 				if (Actions.Run && curSpeed > 0)
-					stamina = Clamp(stamina-curSpeed*0.1, 0.0, 10.0);
+					stamina = Clamp(stamina-curSpeed*0.08, 0.0, 10.0);
 				else
 					stamina = Clamp(stamina+deltaTime*2-curSpeed*0.1, 0.0, 10.0);
 					
@@ -2684,7 +2722,7 @@
 						break;
 					case 0:	//ARRIVAL, SET ELEVATOR
 						snd.gunshot.play();
-						console.log("STATE: 0 (arrival)");
+						//console.log("STATE: 0 (arrival)");
 						snd.elevator.play();
 						scene.fog.far = 0;
 						stateLerp = [0.1, 0.0, 1.0];
@@ -2703,6 +2741,25 @@
 								}, 2500);
 							}, 1500);
 						}, 12000);
+						var mdlsToSpawn = [mdl.fish.scene, mdl.specialRoom[1], mdl.specialRoom[2], mdl.specialRoom[3], mdl.specialRoom[4], mdl.specialRoom[5], mdl.specialRoom[6]]
+						var i=1;
+						var iterFunc = function(){
+							//mdlsToSpawn[i] = mdlsToSpawn[i].clone();
+							mdlsToSpawn[i] = CreateRoom(i, true);
+							mdlsToSpawn[i].position.z += 4;
+							scene.add(mdlsToSpawn[i]);
+							++i;
+							if(i<mdlsToSpawn.length)
+								SetTimeout(iterFunc, 500);
+						}
+						iterFunc();
+						SetTimeout(function(){
+							for(i=1; i<mdlsToSpawn.length; ++i){
+								Degenerate(mdlsToSpawn[i]);
+								scene.remove(mdlsToSpawn[i]);
+								delete mdlsToSpawn[i];
+							}
+						}, 500*mdlsToSpawn.length);
 						break;
 					case 1:	//ELEVATOR RIDE
 						scene.fog.far = Lerp(scene.fog.far, 16.0, deltaTime*0.5);
@@ -2758,7 +2815,7 @@
 						rooms.forEach(function(room){
 							if (room.specialNum === 1){
 								needRoom = room;
-								console.log(needRoom);
+								//console.log(needRoom);
 								room.attach(cam);
 								room.attach(light);
 								room.add(mdl.entrance);
@@ -2774,6 +2831,10 @@
 						fishActive = false;
 						if (snd.music[2].isPlaying)
 							snd.music[2].stop();
+						if (snd.music[4].isPlaying)
+							snd.music[4].stop();
+						if (snd.music[5].isPlaying)
+							snd.music[5].stop();
 						scene.remove(mdl.fish.scene);
 						if(snd.monster.isPlaying)
 							snd.monster.stop();
@@ -2819,7 +2880,7 @@
 						fov += deltaTime;
 						
 						scene.fog.far += deltaTime*5;
-						rend.toneMappingExposure += deltaTime*0.2;
+						rend.toneMappingExposure += deltaTime*0.1;
 						break;
 				}
 			}
@@ -2842,6 +2903,8 @@
 				if(!Release){
 					ui.textAlign = "left";
 					ui.drawStroked(stamina.toString(), 0, 96);
+					ui.drawStroked(mdl.fish.blocked.toString(), 0, 128);
+					ui.drawStroked(mdl.fish.seesPlayer.toString(), 0, 160);
 				}
 				if(showCrowbar)
 					ui.drawImage(img.iconCrowbar, width-96, height-96);
@@ -2919,7 +2982,7 @@
 						if(buttonOn && Actions.Interact){
 							Graphics.MotionBlur = !Graphics.MotionBlur;
 							SetCookie("Graphics.MotionBlur", Graphics.MotionBlur, 365);
-							console.log(composer.passes);
+							//console.log(composer.passes);
 							let bloomIndex = 1; for (var i=0; i<composer.passes.length; ++i) if (typeof composer.passes[i] === "UnrealBloomPass"){ bloomIndex = i+1; break; }
 							if (Graphics.MotionBlur)
 								composer.insertPass(afterimagePass, bloomIndex);
@@ -3045,7 +3108,7 @@
 				}
 				Object.entries(snd).forEach(function(_snd){
 					if(_snd[1].length){
-						console.log(_snd[1]);
+						//console.log(_snd[1]);
 						for(var i=1; i<_snd[1].length; ++i){
 							PauseUnpause(_snd[1][i]);
 						}
@@ -3159,10 +3222,10 @@
 			if ('serviceWorker' in navigator) {
 				navigator.serviceWorker.register('./sw.js')
 				.then(function(registration) {
-					console.log('Registration successful, scope is:', registration.scope);
+					//console.log('Registration successful, scope is:', registration.scope);
 				})
 				.catch(function(error) {
-					console.log('Service worker registration failed, error:', error);
+					//console.log('Service worker registration failed, error:', error);
 				});
 			}
 		});
