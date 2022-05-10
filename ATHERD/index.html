@@ -27,7 +27,7 @@
 		}
 	</SCRIPT>
 	<SCRIPT type="module">
-		const Release = true;
+		const Release = false;
 		
 		import * as THREE from "three";
 		import { GLTFLoader } from './GLTFLoader.js';
@@ -41,6 +41,8 @@
 		import { UnrealBloomPass } from './postprocessing/UnrealBloomPass.js';
 		import { LUTPass } from './postprocessing/LUTPass.js';
 		import { FilmPass } from './postprocessing/FilmPass.js';
+		
+		import Stats from './libs/stats.module.js';
 		
 		const d2r = 0.0174532925;
 		const r2d = 57.2957795130;
@@ -279,7 +281,7 @@
 			
 			listener.setMasterVolume(Volume);
 			
-			//console.log(cam);
+			console.log(cam);
 			
 			const ambLight = new THREE.AmbientLight(0x0);
 			scene.add(ambLight);
@@ -297,7 +299,7 @@
 					xhttp.responseType = "arraybuffer";
 					
 					xhttp.onload = function(){
-						//console.log("LOADED RESOURCES");
+						console.log("LOADED RESOURCES");
 						resourceFile = this.response;
 						let pos = 0;
 						let dv = new DataView(resourceFile);
@@ -306,11 +308,11 @@
 							let length = dv.getUint32(pos, true);
 							pos += 4;
 							result.push(resourceFile.slice(pos, pos+length));
-							////console.log("LENGTH: ", length);
+							//console.log("LENGTH: ", length);
 							pos += length;
 						}
-						//console.log("PARSED", result.length, "RESOURCES");
-						//console.log(result);
+						console.log("PARSED", result.length, "RESOURCES");
+						console.log(result);
 						resolve(result);
 					}
 					xhttp.send();
@@ -349,7 +351,7 @@
 				vignette:	await LoadImage("./GFX/vignette.png")
 			}
 			
-			//console.log("Loading textures...");
+			console.log("Loading textures...");
 			function LoadTexture(fname, mattex){
 				return new Promise(function(resolve, reject){
 					function loadDone(x){
@@ -740,7 +742,7 @@
 			};
 			DrawDisclaimer(true);
 			
-			//console.log("Loading models.");
+			console.log("Loading models.");
 			function LoadGLTF(fname, materials){
 				return new Promise(function(resolve, reject){
 					function loadDone(x){
@@ -766,7 +768,7 @@
 							//mesh.scene.castShadow = true;
 							//mesh.scene.receiveShadows = true;
 						}
-						//console.log(mesh);
+						console.log(mesh);
 						loadDone(mesh.animations.length > 0 ? mesh : mesh.scene);
 						DrawDisclaimer(true, fname);
 					});
@@ -837,7 +839,7 @@
 			/*const planksObject = new THREE.Object3D();
 			mdl.planks.forEach(function(plank){
 				/*plank.mixer = new THREE.AnimationMixer(plank.scene);
-				//console.log(plank);
+				console.log(plank);
 				plank.anim = plank.mixer.clipAction(plank.animations[0]),
 				plank.scene.children[0].children[0].material = mat.metal;
 				plank.scene.children[0].children[1].material = mat.wood;
@@ -847,11 +849,11 @@
 			const planksRObject = new THREE.Object3D();
 			mdl.planksR.forEach(function(plank){
 				plank.mixer = new THREE.AnimationMixer(plank.scene);
-				//console.log(plank);
+				console.log(plank);
 				plank.anim = plank.mixer.clipAction(plank.animations[0]);
 				plank.anim.loop = THREE.LoopOnce;
 				plank.anim.clampWhenFinished = true;
-				//console.log(plank);
+				console.log(plank);
 				plank.scene.children[1].children[0].material = mat.metal;
 				plank.scene.children[1].children[1].material = mat.wood;
 				plank.scene.position.z += 3;
@@ -1144,7 +1146,7 @@
 			const composer = new EffectComposer(rend);
 			
 			const renderPass = new RenderPass(scene, cam);
-			//console.log(composer.passes);
+			console.log(composer.passes);
 			composer.addPass(renderPass);
 			
 			//FXAA	1
@@ -1182,7 +1184,7 @@
 			/*filmPass.fsQuad.onBeforeRender = function(){
 				filmPass.material.uniforms["nIntensity"] = 0.0;
 				filmPass.material.uniformsNeedUpdate = true;
-				//console.log("Hello");
+				console.log("Hello");
 			}*/
 			
 			//BLUR
@@ -1254,7 +1256,7 @@
 					case 74: 
 						if (!Release){
 							ParticleDust(camPos, 6, 0.06, 0.1, 3, 1, 0x222222);
-							//console.log(specialObjects[9]);
+							console.log(specialObjects[9]);
 						}
 						break;
 					case 75: 
@@ -1299,14 +1301,14 @@
 			}
 			
 			
-			//console.log("Scene initialized.");
+			console.log("Scene initialized.");
 			
 			const worldColliders = new THREE.Object3D();
 			scene.add(worldColliders);
 			
 			if(wssUrl !== null)
 				connected = await ConnectSocket(wssUrl);
-			//console.log("WSS: Operations complete");
+			console.log("WSS: Operations complete");
 			
 			function CreateRoom(num, special = false){
 				let tempRoom = special ? mdl.specialRoom[num].clone() : mdl.room[num].clone();
@@ -1473,13 +1475,13 @@
 						}
 						break;
 				}
-				//console.log(tempRoom);*/
+				console.log(tempRoom);*/
 				
 				
 				rooms.push(tempRoom);
 				worldColliders.add(tempRoom);
 				
-				////console.log("ROOM: Created room:", num, tempRoom);
+				//console.log("ROOM: Created room:", num, tempRoom);
 				
 				return tempRoom;
 			}
@@ -1520,7 +1522,7 @@
 				scene.add(specialObjects[9]);
 			}
 			function PlayAmbient(){
-				//console.log("Playing ambient sound");
+				console.log("Playing ambient sound");
 				let ambObj = new THREE.Object3D();
 				ambObj.position.set(camPos.x+RandomFRange(-24, 24), 0, camPos.z+RandomFRange(-24, 24));
 				scene.add(ambObj);
@@ -1546,7 +1548,7 @@
 					timeOut.timer -= deltaTime*1000;
 					if (timeOut.timer <= 0.0){
 						timeOut.func();
-						////console.log("TIMEOUT: Executing function");
+						//console.log("TIMEOUT: Executing function");
 						timeOuts.splice(timeOut.id, 1);
 						for(var i=0; i<timeOuts.length; ++i){
 							timeOuts[i].id = i;
@@ -1690,7 +1692,7 @@
 					fishPos.copy(newPos);
 					fishT.position.copy(newPos);
 					mdl.fish.stuckTimer = RandomFRange(12, 40);
-					//console.log("FISH: Teleporting");
+					console.log("FISH: Teleporting");
 				}
 				
 				canBlink = !mdl.fish.noticed;
@@ -1736,7 +1738,7 @@
 					var other = new THREE.Vector3().subVectors(camPos, mdl.fish.head.getWorldPosition(new THREE.Vector3())).normalize();
 					var product = fwd.x * other.x + fwd.y * other.y + fwd.z * other.z;
 				mdl.fish.seesPlayer = (product > -0.3);
-				////console.log(0.95-crouch*0.96);	
+				//console.log(0.95-crouch*0.96);	
 				
 				//SELF SOUNDS
 				const selfPos = (ray.length > 0) ? ray[0].point : fishT.position;
@@ -1747,7 +1749,7 @@
 				else{
 					fishFilter.frequency.value = 6000;
 				}
-				//console.log(fishFilter.frequency.value);
+				console.log(fishFilter.frequency.value);
 				
 				const distToLast = fishPos.distanceTo(mdl.fish.lastPlayerPosition);
 				//MOVIMENTO
@@ -1773,7 +1775,7 @@
 					let randMax = dist*0.15;
 					if (mdl.fish.stamina <= 0.0)
 						mdl.fish.lastPlayerPosition.copy(new THREE.Vector3(RandomFRange(-randMax, randMax) + camPos.x, 0, RandomFRange(-randMax, randMax) + camPos.z));
-					//console.log("FISH: I heard that");
+					console.log("FISH: I heard that");
 				}
 				var musVol = snd.music[2].getVolume(musVol);
 				var musVolA = snd.music[4].getVolume(musVolA);
@@ -1833,7 +1835,7 @@
 						mdl.fish.noticed = false;
 						mdl.fish.chargeUp = 0.0;
 						mdl.fish.stamina = 0.0;
-						//console.log("FISH: Lost you");
+						console.log("FISH: Lost you");
 					}
 					if (mdl.fish.chargeUp > 0.0){
 						mdl.fish.chargeUp -= deltaTime;
@@ -1868,7 +1870,7 @@
 						if (mdl.fish.alert){
 							mdl.fish.alert = false;
 							mdl.fish.coolDown = RandomFRange(5, 12)
-							//console.log("FISH: Calm");
+							console.log("FISH: Calm");
 						}
 						else{
 							if (mdl.fish.coolDown <= 0.0){
@@ -1937,13 +1939,13 @@
 					}
 					websocket = new WebSocket(wss);
 					websocket.onerror = function(event){
-						//console.log("Error event:", event);
+						console.log("Error event:", event);
 						loadDone(false);
 						return;
 					};
 					websocket.onopen = function(event){
 						connected = true;
-						//console.log("WSS: Connected");
+						console.log("WSS: Connected");
 						
 						let sendFunc = function(){
 							var dataBlock = {
@@ -1961,7 +1963,7 @@
 						};
 						
 						websocket.onmessage = function(event){
-							////console.log("Message:", event);
+							//console.log("Message:", event);
 							var msg = JSON.parse(event.data);
 							switch(msg.type){
 								case MSGType.Player:
@@ -1976,7 +1978,7 @@
 									break;
 								case MSGType.Room:
 									/*let room = rooms[msg.roomID];
-									//console.log("WSS: Room", msg);
+									console.log("WSS: Room", msg);
 									if(msg.generated){
 										Generate(room, msg.rng);
 										/*room.doorWays[msg.doorID].position.y = -8;
@@ -1990,7 +1992,7 @@
 									}*/
 									break;
 								case MSGType.PlayerResponse:
-									//console.log("WSS: Player ID", playerID);
+									console.log("WSS: Player ID", playerID);
 									playerID = msg.id;
 									break;
 								case MSGType.RoomGenerate:
@@ -2029,7 +2031,7 @@
 					if((room.specialNum === 6) && snd.prologue.isPlaying)
 						snd.prologue.stop();
 					specialActive[room.specialNum] = false;
-					//console.log("ROOM: Depawned special room", room.specialNum);
+					console.log("ROOM: Depawned special room", room.specialNum);
 				}
 				worldColliders.remove(room);
 				let _roomID = room.roomID;
@@ -2062,13 +2064,13 @@
 					doorSrc.getWorldPosition(decisionDoorPos);
 					let doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 					for (var k=0; doorDist > 1; ++k){	//BEHOLD, THE MOST UNORTHODOX WAY TO CHECK THE CORRECT ROTATION
-						//console.log("ROOM: THREE.js is actin up again", doorDist);
+						console.log("ROOM: THREE.js is actin up again", doorDist);
 						roomSrc.rotateY(90*d2r);
 						doorDst.getWorldPosition(roomDoorPos);
 						doorSrc.getWorldPosition(decisionDoorPos);
 						doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 						if(k > 2){	//PREVENT RECURSION FOR WHATEVER REASON
-							//console.log("ROOM: No room for you then");
+							console.log("ROOM: No room for you then");
 							Degenerate(roomSrc);
 							return false;
 						}
@@ -2076,7 +2078,7 @@
 				return true;
 			}
 			function Generate(room, rng){
-				//console.log("ROOM: Generated");
+				console.log("ROOM: Generated");
 				if (!rng){
 					rng = Array.from({length: 11}, () => Math.floor(Math.random() * 100));
 					rng.push(100);
@@ -2109,7 +2111,7 @@
 							origin.sub(doorFwd);
 							let hit = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0), 0, 8).intersectObjects(rooms);
 							if (hit.length > 0){
-								//console.log("ROOM: Overlap found, checking if connectable.");
+								console.log("ROOM: Overlap found, checking if connectable.");
 								overlap = hit[0];
 							}
 							if (!overlap){
@@ -2119,10 +2121,10 @@
 								//SPAWNING ROOM
 								let spec = false;//SPECIAL ROOMS
 								let specRoomExists = false;
-								//console.log(specialRoomTimer);
+								console.log(specialRoomTimer);
 								for (var k=0; k<specialActive.length; ++k)
 									if (specialActive[k]){
-										//console.log("SPECIAL:",k);
+										console.log("SPECIAL:",k);
 										specRoomExists = true;
 										break;
 									}
@@ -2148,7 +2150,7 @@
 									spec = true;
 								}
 								if(spec){
-									//console.log("ROOM: Spawned special room", decision);
+									console.log("ROOM: Spawned special room", decision);
 									specialActive[decision] = true;
 								}
 								var decisionR = CreateRoom(decision, spec);
@@ -2169,13 +2171,13 @@
 									doorWay.getWorldPosition(decisionDoorPos);
 									let doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 									for (var k=0; doorDist > 1; ++k){	//BEHOLD, THE MOST UNORTHODOX WAY TO CHECK THE CORRECT ROTATION
-										////console.log("ROOM: THREE.js is actin up again");
+										//console.log("ROOM: THREE.js is actin up again");
 										decisionR.rotateY(90*d2r);
 										door.getWorldPosition(roomDoorPos);
 										doorWay.getWorldPosition(decisionDoorPos);
 										doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 										if(k > 4){	//PREVENT RECURSION FOR WHATEVER REASON
-											////console.log("ROOM: No room for you then");
+											//console.log("ROOM: No room for you then");
 											Degenerate(decisionR);
 											continue generateLoop;
 										}
@@ -2226,7 +2228,7 @@
 											var overPos = new THREE.Vector3();
 											overlapRoom.doorWays[k].getWorldPosition(overPos);
 											if (doorPos.distanceTo(overlapRoom) < 0.1){
-												//console.log("ROOM: Connecting overlap with room.");
+												console.log("ROOM: Connecting overlap with room.");
 												overlapRoom.generated[k] = true;
 												generated[j] = true;
 												overlapRoom.connected[k] = door;
@@ -2252,7 +2254,7 @@
 							if(Actions.Blink && (scene.fog.far<8)){
 								if(dist > 8){
 									if(Math.random() > 0.95){
-										//console.log("ROOM: Degenerated, visus causa");
+										console.log("ROOM: Degenerated, visus causa");
 										Degenerate(rooms[i]);
 										continue;
 									}
@@ -2322,7 +2324,7 @@
 													CameraShake(8);
 													++planksRObject.plank;
 													/*var pl = planksRObject.children[planksRObject.plank].children[0];
-													//console.log(pl);
+													console.log(pl);
 													pl.children[0].material = pl.children[0].material.clone();
 													pl.children[1].material = pl.children[1].material.clone();
 													pl.children[0].material.alphaMap = tex.dust3;
@@ -2332,7 +2334,7 @@
 													mdl.planksR[planksRObject.plank].anim.play();
 													PlayRandomSound(snd.wood);
 													ParticleDust(planksPos, 2, 1, 5, 0.2, 1);
-													//console.log(specialObjects[9]);
+													console.log(specialObjects[9]);
 												}
 												//specialObjects[8].children[specialObjects[8].plank].visible = false;
 												showCrowbar = false;
@@ -2518,7 +2520,7 @@
 					}
 					if ((dist > 48) && !connected){
 						//4CHAN USER
-						//console.log("ROOM: Degenerated, distantiae causa", dist);
+						console.log("ROOM: Degenerated, distantiae causa", dist);
 						Degenerate(rooms[i]);
 					}
 				}
@@ -2722,7 +2724,7 @@
 						break;
 					case 0:	//ARRIVAL, SET ELEVATOR
 						snd.gunshot.play();
-						//console.log("STATE: 0 (arrival)");
+						console.log("STATE: 0 (arrival)");
 						snd.elevator.play();
 						scene.fog.far = 0;
 						stateLerp = [0.1, 0.0, 1.0];
@@ -2815,7 +2817,7 @@
 						rooms.forEach(function(room){
 							if (room.specialNum === 1){
 								needRoom = room;
-								//console.log(needRoom);
+								console.log(needRoom);
 								room.attach(cam);
 								room.attach(light);
 								room.add(mdl.entrance);
@@ -2982,7 +2984,7 @@
 						if(buttonOn && Actions.Interact){
 							Graphics.MotionBlur = !Graphics.MotionBlur;
 							SetCookie("Graphics.MotionBlur", Graphics.MotionBlur, 365);
-							//console.log(composer.passes);
+							console.log(composer.passes);
 							let bloomIndex = 1; for (var i=0; i<composer.passes.length; ++i) if (typeof composer.passes[i] === "UnrealBloomPass"){ bloomIndex = i+1; break; }
 							if (Graphics.MotionBlur)
 								composer.insertPass(afterimagePass, bloomIndex);
@@ -3108,7 +3110,7 @@
 				}
 				Object.entries(snd).forEach(function(_snd){
 					if(_snd[1].length){
-						//console.log(_snd[1]);
+						console.log(_snd[1]);
 						for(var i=1; i<_snd[1].length; ++i){
 							PauseUnpause(_snd[1][i]);
 						}
@@ -3218,14 +3220,20 @@
 					DrawDisclaimer();
 				}
 			});
-			
-			if ('serviceWorker' in navigator) {
+			function InIframe() {
+				try {
+					return window.self !== window.top;
+				} catch (e) {
+					return true;
+				}
+			}
+			if (!InIframe() && ('serviceWorker' in navigator)){
 				navigator.serviceWorker.register('./sw.js')
 				.then(function(registration) {
-					//console.log('Registration successful, scope is:', registration.scope);
+					console.log('Registration successful, scope is:', registration.scope);
 				})
 				.catch(function(error) {
-					//console.log('Service worker registration failed, error:', error);
+					console.log('Service worker registration failed, error:', error);
 				});
 			}
 		});
