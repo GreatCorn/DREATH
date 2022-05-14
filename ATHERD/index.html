@@ -2,6 +2,7 @@
 <HTML>
 <HEAD>
 	<META charset="utf-8">
+	<META name="viewport" content="width=device-width, initial-scale=0.5, user-scalable=0">
 	<LINK rel="shortcut icon" href="./favicon.png">
 	<LINK rel="manifest" href="./manifest.json">
 	<TITLE>ATHERD</TITLE>
@@ -13,6 +14,7 @@
 		BODY{
 			background-color: black;
 			margin: 0;
+			overscroll-behavior: none;
 		}
 		CANVAS{
 			display: block;
@@ -27,7 +29,7 @@
 		}
 	</SCRIPT>
 	<SCRIPT type="module">
-		const Release = true;
+		const Release = false;
 		
 		import * as THREE from "three";
 		import { GLTFLoader } from './GLTFLoader.js';
@@ -41,6 +43,8 @@
 		import { UnrealBloomPass } from './postprocessing/UnrealBloomPass.js';
 		import { LUTPass } from './postprocessing/LUTPass.js';
 		import { FilmPass } from './postprocessing/FilmPass.js';
+		
+		import Stats from './libs/stats.module.js';
 		
 		const d2r = 0.0174532925;
 		const r2d = 57.2957795130;
@@ -83,12 +87,13 @@
 		
 		var loaded = false;
 		var loadProgress = 0;
-		var loadAmount = 185;
+		var loadAmount = 190;
 		var loadMultiplier = 160/loadAmount;
 	
 		const uiCanvas = document.createElement("canvas");
 		const ui = uiCanvas.getContext("2d");
 		var showCrowbar = false, showHand = false, showKey = false;
+		var touchscreen = false;
 		
 		var cam, light, ambLight, listener;
 		var state = -1;
@@ -111,6 +116,9 @@
 		var gamepads = [], gamepadsPrev = [];
 		var gamepadMouse = false;
 		var keyboard = {};
+		var touchesStart = [];
+		var touchesMove = [];
+		var touchedUI = [];
 		var camFwd = new THREE.Vector3(0, 0, 0);
 		var camRot = [3.14, 0.0, 3.14, 0.0];
 		var camRotOffset = [0.0, 0.0, 0.0, 0.0];
@@ -263,6 +271,8 @@
 			light.shadow.camera.far = 25;
 			scene.add(light);
 			
+			touchscreen = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0));
+			
 			//LOAD COOKIES
 			Graphics.Bloom =		(GetCookie("Graphics.Bloom", "true") == "true");
 			Graphics.FXAA =			(GetCookie("Graphics.FXAA", "true") == "true");
@@ -279,7 +289,7 @@
 			
 			listener.setMasterVolume(Volume);
 			
-			//console.log(cam);
+			console.log(cam);
 			
 			const ambLight = new THREE.AmbientLight(0x0);
 			scene.add(ambLight);
@@ -297,7 +307,7 @@
 					xhttp.responseType = "arraybuffer";
 					
 					xhttp.onload = function(){
-						//console.log("LOADED RESOURCES");
+						console.log("LOADED RESOURCES");
 						resourceFile = this.response;
 						let pos = 0;
 						let dv = new DataView(resourceFile);
@@ -306,11 +316,11 @@
 							let length = dv.getUint32(pos, true);
 							pos += 4;
 							result.push(resourceFile.slice(pos, pos+length));
-							////console.log("LENGTH: ", length);
+							//console.log("LENGTH: ", length);
 							pos += length;
 						}
-						//console.log("PARSED", result.length, "RESOURCES");
-						//console.log(result);
+						console.log("PARSED", result.length, "RESOURCES");
+						console.log(result);
 						resolve(result);
 					}
 					xhttp.send();
@@ -346,10 +356,16 @@
 				iconKey:	await LoadImage("./GFX/iconKey.jpg"),
 				logo:		await LoadImage("./GFX/logo.png"),
 				pauseMenu:	await LoadImage("./GFX/pauseMenu.png"),
-				vignette:	await LoadImage("./GFX/vignette.png")
+				vignette:	await LoadImage("./GFX/vignette.png"),
+				
+				touchInteract:	await LoadImage("./GFX/touchInteract.png"),
+				touchMenu:		await LoadImage("./GFX/touchMenu.png"),
+				touchCrouch:	await LoadImage("./GFX/touchCrouch.png"),
+				touchRun:		await LoadImage("./GFX/touchRun.png"),
+				touchBlink:		await LoadImage("./GFX/touchBlink.png"),
 			}
 			
-			//console.log("Loading textures...");
+			console.log("Loading textures...");
 			function LoadTexture(fname, mattex){
 				return new Promise(function(resolve, reject){
 					function loadDone(x){
@@ -463,11 +479,6 @@
 				lut:	await LoadTexture("./GFX/PosterInv.png"),
 			};
 			
-			tex.door.flipY = false;
-			tex.doorRed.flipY = false;
-			tex.fish.flipY = false;
-			tex.key.flipY = false;
-			tex.misc.flipY = false;
 			tex.metal.repeat =		new THREE.Vector2(2, 2);
 			tex.planks.repeat =		new THREE.Vector2(1, 2);
 			tex.rubber.repeat =		new THREE.Vector2(2, 2);
@@ -740,7 +751,7 @@
 			};
 			DrawDisclaimer(true);
 			
-			//console.log("Loading models.");
+			console.log("Loading models.");
 			function LoadGLTF(fname, materials){
 				return new Promise(function(resolve, reject){
 					function loadDone(x){
@@ -766,7 +777,7 @@
 							//mesh.scene.castShadow = true;
 							//mesh.scene.receiveShadows = true;
 						}
-						//console.log(mesh);
+						console.log(mesh);
 						loadDone(mesh.animations.length > 0 ? mesh : mesh.scene);
 						DrawDisclaimer(true, fname);
 					});
@@ -837,7 +848,7 @@
 			/*const planksObject = new THREE.Object3D();
 			mdl.planks.forEach(function(plank){
 				/*plank.mixer = new THREE.AnimationMixer(plank.scene);
-				//console.log(plank);
+				console.log(plank);
 				plank.anim = plank.mixer.clipAction(plank.animations[0]),
 				plank.scene.children[0].children[0].material = mat.metal;
 				plank.scene.children[0].children[1].material = mat.wood;
@@ -847,11 +858,11 @@
 			const planksRObject = new THREE.Object3D();
 			mdl.planksR.forEach(function(plank){
 				plank.mixer = new THREE.AnimationMixer(plank.scene);
-				//console.log(plank);
+				console.log(plank);
 				plank.anim = plank.mixer.clipAction(plank.animations[0]);
 				plank.anim.loop = THREE.LoopOnce;
 				plank.anim.clampWhenFinished = true;
-				//console.log(plank);
+				console.log(plank);
 				plank.scene.children[1].children[0].material = mat.metal;
 				plank.scene.children[1].children[1].material = mat.wood;
 				plank.scene.position.z += 3;
@@ -1134,6 +1145,12 @@
 				fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
 				fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
 			}
+			document.onfullscreenchange = function(){
+				//console.log(document.fullscreenElement);
+				if (document.fullscreenElement && touchscreen) {
+					screen.orientation.lock("landscape");
+				}
+			}
 			
 			if (!Release){
 				stats = new Stats();
@@ -1144,7 +1161,7 @@
 			const composer = new EffectComposer(rend);
 			
 			const renderPass = new RenderPass(scene, cam);
-			//console.log(composer.passes);
+			console.log(composer.passes);
 			composer.addPass(renderPass);
 			
 			//FXAA	1
@@ -1182,7 +1199,7 @@
 			/*filmPass.fsQuad.onBeforeRender = function(){
 				filmPass.material.uniforms["nIntensity"] = 0.0;
 				filmPass.material.uniformsNeedUpdate = true;
-				//console.log("Hello");
+				console.log("Hello");
 			}*/
 			
 			//BLUR
@@ -1254,7 +1271,7 @@
 					case 74: 
 						if (!Release){
 							ParticleDust(camPos, 6, 0.06, 0.1, 3, 1, 0x222222);
-							//console.log(specialObjects[9]);
+							console.log(specialObjects[9]);
 						}
 						break;
 					case 75: 
@@ -1297,16 +1314,105 @@
 					case 1:	Actions.Blink = false;	break;
 				}
 			}
+			if(touchscreen){
+				window.addEventListener("devicemotion", function(event){
+					//console.log(event.accelerationIncludingGravity.y);
+					Actions.Tilt = Clamp(event.accelerationIncludingGravity.y*0.2, -1.0, 1.0);
+					if (screen.orientation.type === "landscape-primary")
+						Actions.Tilt = -Actions.Tilt;
+				}, true);
+				document.ontouchstart = function(event){
+					if(paused)
+						Actions.Drag = true;
+					mousePos = [event.touches[0].pageX, event.touches[0].pageY];
+					for (var i=0; i<event.touches.length; ++i){
+						var tid = event.touches[i].identifier;
+						touchedUI[tid] = false;
+						if(InRange(event.touches[i].pageX, event.touches[i].pageY, window.innerWidth*0.5-32, 0, window.innerWidth*0.5+32, 64)){
+							Actions.Menu = true;
+							touchedUI[tid] = true;
+						}
+						if(InRange(event.touches[i].pageX, event.touches[i].pageY, window.innerWidth-96, window.innerHeight-96, window.innerWidth-32, window.innerHeight-32)){
+							Actions.Interact = true;
+							Actions.Drag = true;
+						}
+						if(InRange(event.touches[i].pageX, event.touches[i].pageY, window.innerWidth-96, window.innerHeight-192, window.innerWidth-32, window.innerHeight-128))
+							Actions.Blink = true;
+						if(InRange(event.touches[i].pageX, event.touches[i].pageY, 32, window.innerHeight-96, 96, window.innerHeight-32))
+							Actions.Crouch = !Actions.Crouch;
+						if(InRange(event.touches[i].pageX, event.touches[i].pageY, 32, window.innerHeight-192, 96, window.innerHeight-128))
+							Actions.Run = !Actions.Run;
+						let inList = false;
+						for(var j=0; j<touchesStart.length; ++j){
+							console.log(touchesStart[j], touchesStart.length);
+							if(touchesStart[j])
+								if (event.touches[i].identifier == touchesStart[j].identifier)
+									inList = true;
+						}
+						if (!inList){
+							touchesStart[tid] = event.touches[i];
+							touchesMove[tid] = event.touches[i];
+						}
+					}
+				}
+				document.ontouchend = function(event){
+					console.log(event.changedTouches);
+					for (var i=0; i<event.changedTouches.length; ++i){
+						/*delete touchesStart[event.changedTouches[i].identifier];
+						delete touchesMove[event.changedTouches[i].identifier];*/
+						if(!touchedUI[i]){
+							if (event.changedTouches[i].pageX < window.innerWidth * 0.5){
+								Actions.Horizontal = 0.0;
+								Actions.Vertical = 0.0;
+							}
+							else{
+								Actions.LookHorizontal = 0.0;
+								Actions.LookVertical = 0.0;
+							}
+						}
+						for (var j=0; j<touchesStart.length; ++j)
+							if(touchesStart[j])
+								if (event.changedTouches[i].identifier == touchesStart[j].identifier){
+									if(InRange(touchesStart[j].pageX, touchesStart[j].pageY, window.innerWidth-96, window.innerHeight-96, window.innerWidth-32, window.innerHeight-32))
+										Actions.Drag = false;
+									if(InRange(touchesStart[j].pageX, touchesStart[j].pageY, window.innerWidth-96, window.innerHeight-192, window.innerWidth-32, window.innerHeight-128))
+										Actions.Blink = false;
+									delete touchesStart[j];
+								}
+					}
+				}
+				document.ontouchmove = function(event){
+					/*var _touchesMove = [];
+					for (var i=0; i<event.touches.length; ++i)
+						_touchesMove[event.touches[i].identifier] = event.touches[i];*/
+					mousePos = [event.touches[0].pageX, event.touches[0].pageY];
+					for (var i=0; i<event.touches.length; ++i){
+						var tid = event.touches[i].identifier;
+						if(!touchedUI[tid] && touchesStart[tid]){
+							if(touchesStart[tid].pageX < window.innerWidth * 0.5){
+								Actions.Horizontal =DeadZone(Clamp((touchesStart[tid].pageX - event.touches[i].pageX) * 0.03, -1.0, 1.0));
+								Actions.Vertical = 	DeadZone(Clamp((touchesStart[tid].pageY - event.touches[i].pageY) * 0.03, -1.0, 1.0));
+							}
+							else{
+								Actions.LookHorizontal =DeadZone((touchesMove[tid].pageX - event.touches[i].pageX) * Sensitivity * 4);
+								Actions.LookVertical = 	DeadZone((touchesMove[tid].pageY - event.touches[i].pageY) * Sensitivity * 4);
+							}
+						}
+					}
+					
+					for (var i=0; i<event.touches.length; ++i)
+						touchesMove[event.touches[i].identifier] = event.touches[i];
+				}
+			}
 			
-			
-			//console.log("Scene initialized.");
+			console.log("Scene initialized.");
 			
 			const worldColliders = new THREE.Object3D();
 			scene.add(worldColliders);
 			
 			if(wssUrl !== null)
 				connected = await ConnectSocket(wssUrl);
-			//console.log("WSS: Operations complete");
+			console.log("WSS: Operations complete");
 			
 			function CreateRoom(num, special = false){
 				let tempRoom = special ? mdl.specialRoom[num].clone() : mdl.room[num].clone();
@@ -1383,11 +1489,12 @@
 							specialObjects[1].rotateY(Math.PI);
 							tempRoom.add(specialObjects[1]);
 							
-							
-							specialObjects[2] = new THREE.PointLight(0xebd7a0, 0.2, 5);
-							specialObjects[2].position.set(-2, 0, 0);
-							//specialObjects[2].castShadow = true;
-							tempRoom.add(specialObjects[2]);
+							if(state < 2){
+								specialObjects[2] = new THREE.PointLight(0xebd7a0, 0.2, 5);
+								specialObjects[2].position.set(-2, 0, 0);
+								//specialObjects[2].castShadow = true;
+								tempRoom.add(specialObjects[2]);
+							}
 							
 							snd.elevatorOpen.position.set(-2, 0, -3.8);
 							tempRoom.add(snd.elevatorOpen);
@@ -1473,13 +1580,13 @@
 						}
 						break;
 				}
-				//console.log(tempRoom);*/
+				console.log(tempRoom);*/
 				
 				
 				rooms.push(tempRoom);
 				worldColliders.add(tempRoom);
 				
-				////console.log("ROOM: Created room:", num, tempRoom);
+				//console.log("ROOM: Created room:", num, tempRoom);
 				
 				return tempRoom;
 			}
@@ -1520,7 +1627,7 @@
 				scene.add(specialObjects[9]);
 			}
 			function PlayAmbient(){
-				//console.log("Playing ambient sound");
+				console.log("Playing ambient sound");
 				let ambObj = new THREE.Object3D();
 				ambObj.position.set(camPos.x+RandomFRange(-24, 24), 0, camPos.z+RandomFRange(-24, 24));
 				scene.add(ambObj);
@@ -1546,7 +1653,7 @@
 					timeOut.timer -= deltaTime*1000;
 					if (timeOut.timer <= 0.0){
 						timeOut.func();
-						////console.log("TIMEOUT: Executing function");
+						//console.log("TIMEOUT: Executing function");
 						timeOuts.splice(timeOut.id, 1);
 						for(var i=0; i<timeOuts.length; ++i){
 							timeOuts[i].id = i;
@@ -1690,7 +1797,7 @@
 					fishPos.copy(newPos);
 					fishT.position.copy(newPos);
 					mdl.fish.stuckTimer = RandomFRange(12, 40);
-					//console.log("FISH: Teleporting");
+					console.log("FISH: Teleporting");
 				}
 				
 				canBlink = !mdl.fish.noticed;
@@ -1736,7 +1843,7 @@
 					var other = new THREE.Vector3().subVectors(camPos, mdl.fish.head.getWorldPosition(new THREE.Vector3())).normalize();
 					var product = fwd.x * other.x + fwd.y * other.y + fwd.z * other.z;
 				mdl.fish.seesPlayer = (product > -0.3);
-				////console.log(0.95-crouch*0.96);	
+				//console.log(0.95-crouch*0.96);	
 				
 				//SELF SOUNDS
 				const selfPos = (ray.length > 0) ? ray[0].point : fishT.position;
@@ -1747,7 +1854,7 @@
 				else{
 					fishFilter.frequency.value = 6000;
 				}
-				//console.log(fishFilter.frequency.value);
+				console.log(fishFilter.frequency.value);
 				
 				const distToLast = fishPos.distanceTo(mdl.fish.lastPlayerPosition);
 				//MOVIMENTO
@@ -1773,7 +1880,7 @@
 					let randMax = dist*0.15;
 					if (mdl.fish.stamina <= 0.0)
 						mdl.fish.lastPlayerPosition.copy(new THREE.Vector3(RandomFRange(-randMax, randMax) + camPos.x, 0, RandomFRange(-randMax, randMax) + camPos.z));
-					//console.log("FISH: I heard that");
+					console.log("FISH: I heard that");
 				}
 				var musVol = snd.music[2].getVolume(musVol);
 				var musVolA = snd.music[4].getVolume(musVolA);
@@ -1833,7 +1940,7 @@
 						mdl.fish.noticed = false;
 						mdl.fish.chargeUp = 0.0;
 						mdl.fish.stamina = 0.0;
-						//console.log("FISH: Lost you");
+						console.log("FISH: Lost you");
 					}
 					if (mdl.fish.chargeUp > 0.0){
 						mdl.fish.chargeUp -= deltaTime;
@@ -1868,7 +1975,7 @@
 						if (mdl.fish.alert){
 							mdl.fish.alert = false;
 							mdl.fish.coolDown = RandomFRange(5, 12)
-							//console.log("FISH: Calm");
+							console.log("FISH: Calm");
 						}
 						else{
 							if (mdl.fish.coolDown <= 0.0){
@@ -1937,13 +2044,13 @@
 					}
 					websocket = new WebSocket(wss);
 					websocket.onerror = function(event){
-						//console.log("Error event:", event);
+						console.log("Error event:", event);
 						loadDone(false);
 						return;
 					};
 					websocket.onopen = function(event){
 						connected = true;
-						//console.log("WSS: Connected");
+						console.log("WSS: Connected");
 						
 						let sendFunc = function(){
 							var dataBlock = {
@@ -1961,7 +2068,7 @@
 						};
 						
 						websocket.onmessage = function(event){
-							////console.log("Message:", event);
+							//console.log("Message:", event);
 							var msg = JSON.parse(event.data);
 							switch(msg.type){
 								case MSGType.Player:
@@ -1976,7 +2083,7 @@
 									break;
 								case MSGType.Room:
 									/*let room = rooms[msg.roomID];
-									//console.log("WSS: Room", msg);
+									console.log("WSS: Room", msg);
 									if(msg.generated){
 										Generate(room, msg.rng);
 										/*room.doorWays[msg.doorID].position.y = -8;
@@ -1990,7 +2097,7 @@
 									}*/
 									break;
 								case MSGType.PlayerResponse:
-									//console.log("WSS: Player ID", playerID);
+									console.log("WSS: Player ID", playerID);
 									playerID = msg.id;
 									break;
 								case MSGType.RoomGenerate:
@@ -2029,7 +2136,7 @@
 					if((room.specialNum === 6) && snd.prologue.isPlaying)
 						snd.prologue.stop();
 					specialActive[room.specialNum] = false;
-					//console.log("ROOM: Depawned special room", room.specialNum);
+					console.log("ROOM: Depawned special room", room.specialNum);
 				}
 				worldColliders.remove(room);
 				let _roomID = room.roomID;
@@ -2062,13 +2169,13 @@
 					doorSrc.getWorldPosition(decisionDoorPos);
 					let doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 					for (var k=0; doorDist > 1; ++k){	//BEHOLD, THE MOST UNORTHODOX WAY TO CHECK THE CORRECT ROTATION
-						//console.log("ROOM: THREE.js is actin up again", doorDist);
+						console.log("ROOM: THREE.js is actin up again", doorDist);
 						roomSrc.rotateY(90*d2r);
 						doorDst.getWorldPosition(roomDoorPos);
 						doorSrc.getWorldPosition(decisionDoorPos);
 						doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 						if(k > 2){	//PREVENT RECURSION FOR WHATEVER REASON
-							//console.log("ROOM: No room for you then");
+							console.log("ROOM: No room for you then");
 							Degenerate(roomSrc);
 							return false;
 						}
@@ -2076,7 +2183,7 @@
 				return true;
 			}
 			function Generate(room, rng){
-				//console.log("ROOM: Generated");
+				console.log("ROOM: Generated");
 				if (!rng){
 					rng = Array.from({length: 11}, () => Math.floor(Math.random() * 100));
 					rng.push(100);
@@ -2109,7 +2216,7 @@
 							origin.sub(doorFwd);
 							let hit = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0), 0, 8).intersectObjects(rooms);
 							if (hit.length > 0){
-								//console.log("ROOM: Overlap found, checking if connectable.");
+								console.log("ROOM: Overlap found, checking if connectable.");
 								overlap = hit[0];
 							}
 							if (!overlap){
@@ -2119,10 +2226,10 @@
 								//SPAWNING ROOM
 								let spec = false;//SPECIAL ROOMS
 								let specRoomExists = false;
-								//console.log(specialRoomTimer);
+								console.log(specialRoomTimer);
 								for (var k=0; k<specialActive.length; ++k)
 									if (specialActive[k]){
-										//console.log("SPECIAL:",k);
+										console.log("SPECIAL:",k);
 										specRoomExists = true;
 										break;
 									}
@@ -2148,7 +2255,7 @@
 									spec = true;
 								}
 								if(spec){
-									//console.log("ROOM: Spawned special room", decision);
+									console.log("ROOM: Spawned special room", decision);
 									specialActive[decision] = true;
 								}
 								var decisionR = CreateRoom(decision, spec);
@@ -2169,13 +2276,13 @@
 									doorWay.getWorldPosition(decisionDoorPos);
 									let doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 									for (var k=0; doorDist > 1; ++k){	//BEHOLD, THE MOST UNORTHODOX WAY TO CHECK THE CORRECT ROTATION
-										////console.log("ROOM: THREE.js is actin up again");
+										//console.log("ROOM: THREE.js is actin up again");
 										decisionR.rotateY(90*d2r);
 										door.getWorldPosition(roomDoorPos);
 										doorWay.getWorldPosition(decisionDoorPos);
 										doorDist = roomDoorPos.distanceToSquared(decisionDoorPos);
 										if(k > 4){	//PREVENT RECURSION FOR WHATEVER REASON
-											////console.log("ROOM: No room for you then");
+											//console.log("ROOM: No room for you then");
 											Degenerate(decisionR);
 											continue generateLoop;
 										}
@@ -2199,8 +2306,8 @@
 								room.connected[j] = doorWay;
 								decisionR.connected[doorWayNumber] = door;
 								
-								if((room.specialNum === 3) && (state > 4))
-									ParticleDust(room.position, 6, 0.06, 0.1, 3, 1, 0x222222);
+								if(spec && (decision === 3) && (state > 4))
+									ParticleDust(decisionR.position, 6, 0.06, 0.1, 3, 1, 0x222222);
 								
 								if(connected){
 									const dataBlock = {
@@ -2226,7 +2333,7 @@
 											var overPos = new THREE.Vector3();
 											overlapRoom.doorWays[k].getWorldPosition(overPos);
 											if (doorPos.distanceTo(overlapRoom) < 0.1){
-												//console.log("ROOM: Connecting overlap with room.");
+												console.log("ROOM: Connecting overlap with room.");
 												overlapRoom.generated[k] = true;
 												generated[j] = true;
 												overlapRoom.connected[k] = door;
@@ -2252,7 +2359,7 @@
 							if(Actions.Blink && (scene.fog.far<8)){
 								if(dist > 8){
 									if(Math.random() > 0.95){
-										//console.log("ROOM: Degenerated, visus causa");
+										console.log("ROOM: Degenerated, visus causa");
 										Degenerate(rooms[i]);
 										continue;
 									}
@@ -2322,7 +2429,7 @@
 													CameraShake(8);
 													++planksRObject.plank;
 													/*var pl = planksRObject.children[planksRObject.plank].children[0];
-													//console.log(pl);
+													console.log(pl);
 													pl.children[0].material = pl.children[0].material.clone();
 													pl.children[1].material = pl.children[1].material.clone();
 													pl.children[0].material.alphaMap = tex.dust3;
@@ -2332,7 +2439,7 @@
 													mdl.planksR[planksRObject.plank].anim.play();
 													PlayRandomSound(snd.wood);
 													ParticleDust(planksPos, 2, 1, 5, 0.2, 1);
-													//console.log(specialObjects[9]);
+													console.log(specialObjects[9]);
 												}
 												//specialObjects[8].children[specialObjects[8].plank].visible = false;
 												showCrowbar = false;
@@ -2442,26 +2549,32 @@
 								}
 								specialObjects[5].rotation.y = (state > 7) ? LerpAngle(specialObjects[5].rotation.y, 1.57, deltaTime*2) : 0;
 								
+								if ((specialObjects[6].switchRot[0] < 1.57) && (state == 4)){
+									specialObjects[6].switchRot[0] = 0.0;
+									SetState(5);
+									snd.powerUp.play();
+									specialRoomTimer = 32;
+									SetTimeout(function(){
+										AddFish();
+										SetState(6);
+									}, 23000);
+								}
 								var distToSwitch = switchPos.distanceToSquared(camPos);
 								if(distToSwitch < 1.5 && state == 4){
 									showHand = true;
 									specialObjects[6].shownHand = true;
 									if(Actions.Drag){
 										specialObjects[6].switchRot[0] = Clamp(specialObjects[6].switchRot[0]-Actions.LookVertical*0.3*Sensitivity, 0, Math.PI);
-										if (specialObjects[6].switchRot[0] < 1.57){
-											specialObjects[6].switchRot[0] = 0.0;
-											SetState(5);
-											snd.powerUp.play();
-											specialRoomTimer = 32;
-											SetTimeout(function(){
-												AddFish();
-												SetState(6);
-											}, 23000);
-										}
 									}
 									else{
 										specialObjects[6].switchRot[0] = 3.14;
 									}
+									/*if(Actions.Interact){
+										SetTimeout(function(){
+											if(!Actions.Drag)
+												specialObjects[6].switchRot[0] = 0.0;
+										}, 300);
+									}*/
 								}
 								else if (specialObjects[6].shownHand){
 									showHand = false;
@@ -2518,7 +2631,7 @@
 					}
 					if ((dist > 48) && !connected){
 						//4CHAN USER
-						//console.log("ROOM: Degenerated, distantiae causa", dist);
+						console.log("ROOM: Degenerated, distantiae causa", dist);
 						Degenerate(rooms[i]);
 					}
 				}
@@ -2722,7 +2835,7 @@
 						break;
 					case 0:	//ARRIVAL, SET ELEVATOR
 						snd.gunshot.play();
-						//console.log("STATE: 0 (arrival)");
+						console.log("STATE: 0 (arrival)");
 						snd.elevator.play();
 						scene.fog.far = 0;
 						stateLerp = [0.1, 0.0, 1.0];
@@ -2815,7 +2928,7 @@
 						rooms.forEach(function(room){
 							if (room.specialNum === 1){
 								needRoom = room;
-								//console.log(needRoom);
+								console.log(needRoom);
 								room.attach(cam);
 								room.attach(light);
 								room.add(mdl.entrance);
@@ -2891,6 +3004,19 @@
 				ui.globalAlpha = 0.5+Math.abs(stamina-10)*0.05;
 				ui.drawImage(img.vignette, 0, 0, width, height);
 				ui.globalAlpha = 1.0;
+				
+				if (touchscreen){
+					ui.drawImage(img.touchMenu, halfWidth-32, 0);
+					ui.globalAlpha = Actions.Drag ? 0.5 : 1.0;
+					ui.drawImage(img.touchInteract, width-96, height-96);
+					ui.globalAlpha = Actions.Blink ? 0.5 : 1.0;
+					ui.drawImage(img.touchBlink, width-96, height-192);
+					ui.globalAlpha = Actions.Crouch ? 0.5 : 1.0;
+					ui.drawImage(img.touchCrouch, 32, height-96);
+					ui.globalAlpha = Actions.Run ? 0.5 : 1.0;
+					ui.drawImage(img.touchRun, 32, height-192);
+					ui.globalAlpha = 1.0;
+				}
 				
 				if(ui.showLogo){
 					var hRatio = width / img.logo.width;
@@ -2982,7 +3108,7 @@
 						if(buttonOn && Actions.Interact){
 							Graphics.MotionBlur = !Graphics.MotionBlur;
 							SetCookie("Graphics.MotionBlur", Graphics.MotionBlur, 365);
-							//console.log(composer.passes);
+							console.log(composer.passes);
 							let bloomIndex = 1; for (var i=0; i<composer.passes.length; ++i) if (typeof composer.passes[i] === "UnrealBloomPass"){ bloomIndex = i+1; break; }
 							if (Graphics.MotionBlur)
 								composer.insertPass(afterimagePass, bloomIndex);
@@ -3080,9 +3206,10 @@
 				}
 			}
 			function MouseInRange(x1, y1, x2, y2){
-				if((mousePos[0] > x1) && (mousePos[0] < x2) && (mousePos[1] > y1) && (mousePos[1] < y2))
-					return true;
-				return false;
+				return InRange(mousePos[0], mousePos[1], x1, y1, x2, y2);
+			}
+			function InRange(x0, y0, x1, y1, x2, y2){
+				return ((x0 > x1) && (x0 < x2) && (y0 > y1) && (y0 < y2));
 			}
 			function ToggleMenu(){
 				paused = !paused;
@@ -3108,7 +3235,7 @@
 				}
 				Object.entries(snd).forEach(function(_snd){
 					if(_snd[1].length){
-						//console.log(_snd[1]);
+						console.log(_snd[1]);
 						for(var i=1; i<_snd[1].length; ++i){
 							PauseUnpause(_snd[1][i]);
 						}
@@ -3228,10 +3355,10 @@
 			if (!InIframe() && ('serviceWorker' in navigator)){
 				navigator.serviceWorker.register('./sw.js')
 				.then(function(registration) {
-					//console.log('Registration successful, scope is:', registration.scope);
+					console.log('Registration successful, scope is:', registration.scope);
 				})
 				.catch(function(error) {
-					//console.log('Service worker registration failed, error:', error);
+					console.log('Service worker registration failed, error:', error);
 				});
 			}
 		});
